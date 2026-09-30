@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# ClearDuty
 
-## Getting Started
+AI tariff classification and landed-cost tool for cross-border e-commerce sellers. US first.
 
-First, run the development server:
+Ticket CD-001 (scaffold) is done. Everything else is planned in `docs/`.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
+## What's in here
+
+| Path                                | What it is                                                                  |
+| ----------------------------------- | --------------------------------------------------------------------------- |
+| `docs/01`–`08`                      | PRD, architecture, security, frontend spec, app flow, schema, tickets, plan |
+| `docs/09-design-prompt.md`          | Prompt for designing the UI in Claude Design                                |
+| `CLAUDE.md`                         | Rules Claude Code reads at the start of every session                       |
+| `.claude/agents/`                   | `reviewer`, `security-auditor`, `test-writer` subagents                     |
+| `.claude/skills/ticket/`            | `/ticket CD-0xx` runs a whole ticket end to end                             |
+| `.claude/settings.json`             | Permissions and an auto-format hook                                         |
+| `supabase/migrations/0001_init.sql` | Full database schema with RLS (applied in CD-002)                           |
+| `lib/tariff/hts.ts`                 | First real code: HTS code formatting, with tests                            |
+
+## Run it (Windows, PowerShell)
+
+1. Install Node.js 22 LTS from nodejs.org if `node -v` doesn't work.
+2. Install pnpm: `npm install -g pnpm`
+3. In this folder:
+
+```powershell
+pnpm install
+pnpm test
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Start Claude Code
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Install it (once), in PowerShell: `irm https://claude.ai/install.ps1 | iex`, then open a new terminal and run `claude --version`.
+2. In this folder run `claude` and sign in.
+3. First message:
 
-## Learn More
+```text
+Read CLAUDE.md and every file in docs/. Summarise the product, the stack and the hard rules
+in 10 lines so I know you have them. Don't write code yet.
+```
 
-To learn more about Next.js, take a look at the following resources:
+4. Then press Shift+Tab for plan mode and type: `/ticket CD-002`
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Before CD-002 you need Docker Desktop and the Supabase CLI (`scoop install supabase`) for the local database.
