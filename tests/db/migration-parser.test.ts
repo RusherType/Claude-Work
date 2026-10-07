@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   expandLoops,
   hasTopLevelOr,
+  isScoped,
   normalizeIdent,
   parseMigrations,
 } from "./migration-parser";
@@ -157,5 +158,78 @@ describe("needsReview", () => {
       "alter table products rename to items;",
       "alter table quotes alter column workspace_id drop not null;",
     ]);
+  });
+});
+
+describe("isScoped", () => {
+  const TENANT = [
+    /^is_member\(workspace_id\)$/i,
+    /^has_role\(workspace_id,\s*array\[[^\]]*\]::member_role\[\]\)$/i,
+  ];
+  const PROFILE = [/^(id\s*=\s*auth\.uid\(\)|auth\.uid\(\)\s*=\s*id)$/i];
+
+  it("accepts the exact forms, wrapped or narrowed with AND", () => {
+    expect(isScoped("is_member(workspace_id)", TENANT)).toBe(true);
+    expect(isScoped("((is_member(workspace_id)))", TENANT)).toBe(true);
+    expect(
+      isScoped(
+        "has_role(workspace_id, array['owner','admin']::member_role[])",
+        TENANT,
+      ),
+    ).toBe(true);
+    expect(
+      isScoped("is_member(workspace_id) and status = 'open'", TENANT),
+    ).toBe(true);
+    expect(
+      isScoped(
+        "id = auth.uid() and is_platform_admin = (select p.is_platform_admin from profiles p where p.id = auth.uid())",
+        PROFILE,
+      ),
+    ).toBe(true);
+  });
+
+  it("rejects expressions that widen or invert access", () => {
+    expect(isScoped("(is_member(workspace_id) or true)", TENANT)).toBe(false);
+    expect(
+      isScoped("(is_member(workspace_id) or is_platform_admin())", TENANT),
+    ).toBe(false);
+    expect(isScoped("not is_member(workspace_id)", TENANT)).toBe(false);
+    expect(isScoped("is_member(workspace_id) is not null", TENANT)).toBe(false);
+    expect(isScoped("true", TENANT)).toBe(false);
+    expect(isScoped("auth.uid() is not null", PROFILE)).toBe(false);
+    expect(
+      isScoped("false between false and is_member(workspace_id)", TENANT),
+    ).toBe(false);
+  });
+});
+
+describe("needsReview scope", () => {
+  it("does not flag composite foreign keys on workspace_id", () => {
+    const s = parseMigrations([
+      `alter table quote_lines add constraint ql_quote foreign key (workspace_id, quote_id) references quotes (workspace_id, id);`,
+    ]);
+    expect(s.needsReview).toEqual([]);
+  });
+
+  it("expands do blocks with a named dollar tag or LANGUAGE clause", () => {
+    const s = parseMigrations([
+      `alter table a enable row level security;
+       do language plpgsql $body$
+       declare t text;
+       begin
+         foreach t in array array['a'] loop
+           execute format('alter table %I disable row level security', t);
+         end loop;
+       end $body$;`,
+    ]);
+    expect(s.rlsEnabled.size).toBe(0);
+    expect(s.needsReview).toEqual([]);
+  });
+
+  it("flags format() templates it could not expand", () => {
+    const s = parseMigrations([
+      `create function f() returns void language plpgsql as $f$ begin execute format('alter table %I disable row level security', 'a'); end $f$;`,
+    ]);
+    expect(s.needsReview.length).toBe(1);
   });
 });

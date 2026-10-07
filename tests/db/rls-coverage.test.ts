@@ -2,8 +2,9 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
-  hasTopLevelOr,
+  isScoped,
   parseMigrations,
+  stripOuterParens,
   type Policy,
 } from "./migration-parser";
 
@@ -38,15 +39,22 @@ const expressions = (p: Policy) =>
   [p.using, p.check].filter((e): e is string => e !== null);
 const label = (p: Policy) => `${p.table}.${p.name}`;
 
-// Every expression must call the scoping function and have no top-level OR that could widen it.
-function unscoped(policies: Policy[], scope: RegExp): string[] {
+// Exact forms that scope a row to the caller (see isScoped).
+const TENANT_SCOPE = [
+  /^is_member\(workspace_id\)$/i,
+  /^has_role\(workspace_id,\s*array\[[^\]]*\]::member_role\[\]\)$/i,
+];
+const WORKSPACE_SCOPE = [
+  /^is_member\(id\)$/i,
+  /^has_role\(id,\s*array\[[^\]]*\]::member_role\[\]\)$/i,
+];
+const PROFILE_SCOPE = [/^(id\s*=\s*auth\.uid\(\)|auth\.uid\(\)\s*=\s*id)$/i];
+
+function unscoped(policies: Policy[], allowed: RegExp[]): string[] {
   return policies
     .filter((p) => {
       const exprs = expressions(p);
-      return (
-        exprs.length === 0 ||
-        exprs.some((e) => !scope.test(e) || hasTopLevelOr(e))
-      );
+      return exprs.length === 0 || exprs.some((e) => !isScoped(e, allowed));
     })
     .map(label);
 }
@@ -83,14 +91,8 @@ describe("migrations", () => {
   });
 
   it("scopes every tenant policy expression to the row's workspace", () => {
-    const scope = /\b(is_member|has_role)\s*\(\s*workspace_id\b/i;
-    expect(unscoped(policiesOn(tenantTables), scope)).toEqual([]);
-    expect(
-      unscoped(
-        policiesOn(["workspaces"]),
-        /\b(is_member|has_role)\s*\(\s*id\b/i,
-      ),
-    ).toEqual([]);
+    expect(unscoped(policiesOn(tenantTables), TENANT_SCOPE)).toEqual([]);
+    expect(unscoped(policiesOn(["workspaces"]), WORKSPACE_SCOPE)).toEqual([]);
   });
 
   it("keeps shared reference data read-only to users", () => {
@@ -99,8 +101,9 @@ describe("migrations", () => {
       .filter(
         (p) =>
           p.table !== "tariff_measures" ||
+          expressions(p).length === 0 ||
           expressions(p).some(
-            (e) => !/^is_platform_admin\(\)$/i.test(e.trim()),
+            (e) => !/^is_platform_admin\(\)$/i.test(stripOuterParens(e)),
           ),
       )
       .map(label);
@@ -108,7 +111,7 @@ describe("migrations", () => {
   });
 
   it("limits profiles to their own user", () => {
-    expect(unscoped(policiesOn(PER_USER), /\bauth\.uid\(\)/i)).toEqual([]);
+    expect(unscoped(policiesOn(PER_USER), PROFILE_SCOPE)).toEqual([]);
   });
 
   it("only allows select and insert on audit_log", () => {

@@ -35,7 +35,7 @@ export function stripComments(sql: string): string {
 // Inside each `do $$ ... end $$;` block, replace every foreach loop with one plain statement per
 // table name. The rest of the block is kept, so statements outside a loop are still seen.
 export function expandLoops(sql: string): string {
-  const doBlock = /\bdo\s+\$\$[\s\S]*?end\s*\$\$\s*;/gi;
+  const doBlock = /\bdo\s+(?:language\s+\w+\s+)?\$(\w*)\$[\s\S]*?\$\1\$\s*;/gi;
   const loop =
     /foreach\s+\w+\s+in\s+array\s+array\[([\s\S]*?)\]\s+loop([\s\S]*?)end\s+loop\s*;?/gi;
   return sql.replace(doBlock, (block) =>
@@ -73,6 +73,50 @@ export function balancedBody(sql: string, openParen: number): string {
 function policyExpression(rest: string, keyword: RegExp): string | null {
   const m = keyword.exec(rest);
   return m ? balancedBody(rest, m.index + m[0].length - 1).trim() : null;
+}
+
+// Remove parentheses that wrap the whole expression, repeatedly: "((a and b))" -> "a and b".
+export function stripOuterParens(expr: string): string {
+  let e = expr.trim();
+  while (e.startsWith("(")) {
+    const inner = balancedBody(e, 0);
+    if (inner.length !== e.length - 2) break;
+    e = inner.trim();
+  }
+  return e;
+}
+
+// Split on AND outside parentheses and string literals.
+export function splitTopLevelAnd(expr: string): string[] {
+  const masked = expr.replace(/'(?:[^']|'')*'/g, (q) => "_".repeat(q.length));
+  const parts: string[] = [];
+  let depth = 0;
+  let start = 0;
+  for (let i = 0; i < masked.length; i++) {
+    if (masked[i] === "(") depth++;
+    else if (masked[i] === ")") depth--;
+    else if (
+      depth === 0 &&
+      /^and\b/i.test(masked.slice(i)) &&
+      (i === 0 || /\W/.test(masked[i - 1]))
+    ) {
+      parts.push(expr.slice(start, i));
+      start = i + 3;
+    }
+  }
+  parts.push(expr.slice(start));
+  return parts.map((p) => stripOuterParens(p).replace(/\s+/g, " "));
+}
+
+// A policy expression is scoped when, after removing wrapping parentheses, it has no top-level OR
+// and at least one top-level AND part is exactly an allowed form. AND can only narrow access.
+export function isScoped(expr: string, allowed: RegExp[]): boolean {
+  const e = stripOuterParens(expr);
+  // BETWEEN's own AND would be mistaken for a narrowing AND, so policies may not use it.
+  if (hasTopLevelOr(e) || /\bbetween\b/i.test(e)) return false;
+  return splitTopLevelAnd(e).some((part) =>
+    allowed.some((re) => re.test(part)),
+  );
 }
 
 // True if `expr` has an OR outside any parentheses or string literal.
@@ -124,9 +168,18 @@ export function parseMigrations(files: string[]): Schema {
   }
 
   // Statements this parser does not model; the guard fails on them so a human reviews the change.
-  const needsReview = [...sql.matchAll(/\balter\s+table\b[^;]*;/gi)]
+  const needsReview: string[] = [...sql.matchAll(/\balter\s+table\b[^;]*;/gi)]
     .map((m) => m[0].replace(/\s+/g, " ").trim())
-    .filter((s) => /\brename\b|\bworkspace_id\b|\bdrop\s+column\b/i.test(s));
+    .filter((s) =>
+      /\brename\b|\balter\s+column\s+"?workspace_id\b|\bdrop\s+column\b/i.test(
+        s,
+      ),
+    );
+  for (const m of sql.matchAll(/format\(\s*['$][^;]*%I[^;]*;/gi)) {
+    needsReview.push(
+      `unexpanded format(): ${m[0].replace(/\s+/g, " ").slice(0, 80)}`,
+    );
+  }
 
   const policies: Policy[] = [];
   const policyRe = new RegExp(
