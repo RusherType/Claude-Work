@@ -22,7 +22,10 @@ export function googleAuthEnabled(): boolean {
   return process.env.NEXT_PUBLIC_AUTH_GOOGLE_ENABLED === "true";
 }
 
-/** Public site URL for links in emails (e.g. https://app.clearduty.com). Optional in development. */
+/**
+ * Public site URL for links in emails (e.g. https://app.clearduty.com). Required in production;
+ * in development the request origin is used when it is unset.
+ */
 export function siteUrl(): string | null {
   const parsed = z.url().safeParse(process.env.NEXT_PUBLIC_SITE_URL);
   return parsed.success && /^https?:/.test(parsed.data)

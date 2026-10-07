@@ -7,7 +7,7 @@ import { SignInForm } from "./sign-in-form";
 export const metadata: Metadata = { title: "Sign in · ClearDuty" };
 
 const ERRORS: Record<string, string> = {
-  link: "That sign-in link is invalid or has expired. Request a new one.",
+  link: "That sign-in link is invalid or has expired, or was opened in a different browser. Request a new one here and open it in this browser.",
   google: "Google sign-in didn't work. Try again or use an email link.",
 };
 

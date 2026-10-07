@@ -21,6 +21,7 @@ async function callbackUrl(next: string) {
   // Prefer the configured site URL; fall back to the request origin (checked by Next against Host
   // for Server Actions, and by Supabase's redirect allow list).
   let base = siteUrl();
+  if (!base && process.env.NODE_ENV === "production") return null;
   if (!base) {
     const origin = z.url().safeParse((await headers()).get("origin"));
     if (!origin.success || !/^https?:/.test(origin.data)) return null;

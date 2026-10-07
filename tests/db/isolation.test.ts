@@ -158,6 +158,7 @@ const ROLE_USERS = {
   member: user.memberA,
   viewer: user.viewerA,
 } as const;
+const MEMBERS_OF_A: string[] = Object.values(ROLE_USERS);
 const CATALOG = ["owner", "admin", "member"];
 const MAY_INSERT: Record<string, string[]> = {
   products: CATALOG,
@@ -241,9 +242,11 @@ async function fingerprint(table: string, where: string, params: unknown[]) {
 
 // As `uid`, try each statement with no WHERE clause (so only RLS limits it), then return the
 // fingerprint of the protected rows seen with full privileges, in the same transaction.
-// Rows that reference `table` are cleared first (inside the rolled-back transaction) so a foreign
-// key error on some other row cannot abort the statement and hide what RLS allowed. Each attempt
-// must either succeed or be refused by RLS/privileges (42501); any other error fails the test.
+// Child rows whose foreign key would block the statement (no-action/restrict on delete, or on
+// update of a key that includes workspace_id) are cleared first, inside the rolled-back
+// transaction, so an FK error on some other row cannot abort the statement and hide what RLS
+// allowed. memberships is never cleared: every permission check reads it. Each attempt must
+// either succeed or be refused by RLS/privileges (42501); any other error fails the test.
 async function attemptThenFingerprint(
   uid: string,
   statements: string[],
@@ -254,15 +257,28 @@ async function attemptThenFingerprint(
   await db.query("begin");
   try {
     const { rows: children } = await db.query(
-      `select distinct conrelid::regclass::text as child from pg_constraint
-       where contype = 'f' and confrelid = $1::regclass and conrelid <> confrelid`,
+      `select distinct c.conrelid::regclass::text as child
+       from pg_constraint c
+       where c.contype = 'f' and c.confrelid = $1::regclass and c.conrelid <> c.confrelid
+         and (c.confdeltype in ('a', 'r')
+              or (c.confupdtype in ('a', 'r') and exists (
+                    select 1 from pg_attribute a
+                    where a.attrelid = c.confrelid and a.attnum = any(c.confkey)
+                      and a.attname = 'workspace_id')))`,
       [`public.${table}`],
     );
-    if (children.length > 0)
-      await db.query(
-        `truncate ${children.map((c) => c.child).join(", ")} cascade`,
-      );
+    const names = children.map((c) => c.child);
+    if (names.includes("memberships"))
+      throw new Error(`Refusing to clear memberships while testing ${table}`);
+    if (names.length > 0)
+      await db.query(`truncate ${names.join(", ")} cascade`);
     await claims(uid);
+    // The actor must still be a member of their own workspace, or every check passes vacuously.
+    if (MEMBERS_OF_A.includes(uid)) {
+      const { rows } = await db.query("select is_member($1) as ok", [ws.A]);
+      if (!rows[0].ok)
+        throw new Error("Actor lost their membership before the attempt");
+    }
     for (const sql of statements) {
       await db.query("savepoint s");
       try {
