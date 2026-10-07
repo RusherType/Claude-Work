@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Lint, typecheck, unit tests, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm format:check
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Block the service-role key in client code (docs/03-security.md)
+        run: |
+          bad=$(grep -rlE 'SERVICE_ROLE' --include='*.ts' --include='*.tsx' app components lib 2>/dev/null \
+            | xargs -r grep -lE "^['\"]use client['\"]" || true)
+          pub=$(grep -rnE 'NEXT_PUBLIC_[A-Z_]*SERVICE_ROLE' --include='*.ts' --include='*.tsx' --include='*.mjs' . \
+            --exclude-dir=node_modules --exclude-dir=.next || true)
+          if [ -n "$bad$pub" ]; then echo "Service-role key referenced from client code:"; echo "$bad"; echo "$pub"; exit 1; fi
+      - name: Audit production dependencies
+        run: pnpm audit --prod --audit-level high
+      - name: Audit all dependencies (report only)
+        run: pnpm audit --audit-level high
+        continue-on-error: true
+      - run: pnpm build
+
+  e2e:
+    name: Playwright
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+        env:
+          CI: true
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7
+
+  db:
+    name: Migrations and generated types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Start local Supabase and apply migrations
+        run: pnpm exec supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
+      - name: Lint the database schema
+        run: pnpm exec supabase db lint --level error
+      - name: Generate types
+        run: mkdir -p lib/supabase && pnpm db:types
+      - name: Print generated types
+        run: echo "----- BEGIN lib/supabase/types.ts -----"; cat lib/supabase/types.ts; echo "----- END lib/supabase/types.ts -----"
+      - name: Generated types are committed and current
+        run: |
+          if ! git ls-files --error-unmatch lib/supabase/types.ts >/dev/null 2>&1; then
+            echo "::error::lib/supabase/types.ts is not committed; download the supabase-types artifact or run pnpm db:types"
+            exit 1
+          fi
+          git diff --exit-code lib/supabase/types.ts
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: supabase-types
+          path: lib/supabase/types.ts
+          retention-days: 7
