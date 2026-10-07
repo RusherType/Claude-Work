@@ -1,18 +1,22 @@
 // Minimal parser for our own migrations, used by the RLS guard tests. Not a general SQL parser:
 // it understands the statement shapes we write (create table, alter table ... row level security,
-// create policy, and `do $$ ... foreach t in array array[...] loop ... format(...) ... end loop` blocks).
+// create policy, and `do $$ ... foreach t in array array[...] loop ... format(...) ... end loop`).
+// Anything it cannot reason about safely (renaming a table, altering workspace_id) is reported in
+// `needsReview` so the guard fails and a human looks at it.
 
 export type Policy = {
   name: string;
   table: string;
   command: string;
-  body: string;
+  using: string | null;
+  check: string | null;
 };
 export type Schema = {
   tables: Map<string, string>; // name -> column/constraint body
   createTableStatements: number;
   rlsEnabled: Set<string>;
   policies: Policy[];
+  needsReview: string[];
 };
 
 const IDENT = String.raw`(?:"[^"]+"|\w+)`;
@@ -28,33 +32,35 @@ export function stripComments(sql: string): string {
   return sql.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/--[^\n]*/g, "");
 }
 
-// Expand `foreach t in array array['a','b'] loop execute format(...); end loop` into plain statements.
+// Inside each `do $$ ... end $$;` block, replace every foreach loop with one plain statement per
+// table name. The rest of the block is kept, so statements outside a loop are still seen.
 export function expandLoops(sql: string): string {
-  const doBlock = /\bdo\s+\$\$([\s\S]*?)end\s*\$\$\s*;/gi;
-  return sql.replace(doBlock, (whole, inner: string) => {
-    const loop =
-      /foreach\s+\w+\s+in\s+array\s+array\[([\s\S]*?)\]\s+loop([\s\S]*?)end\s+loop/i.exec(
-        inner,
-      );
-    if (!loop) return whole;
-    const names = [...loop[1].matchAll(/'(\w+)'/g)].map((m) => m[1]);
-    const templates = [
-      ...loop[2].matchAll(
-        /format\(\s*(?:'((?:[^']|'')*)'|\$(\w*)\$([\s\S]*?)\$\2\$)/gi,
-      ),
-    ].map((m) => (m[1] !== undefined ? m[1].replace(/''/g, "'") : m[3]));
-    return names
-      .flatMap((n) =>
-        templates.map((t) =>
-          t.replace(/%I\s+on\s+%I/gi, `${n}_policy on ${n}`).replace(/%I/g, n),
+  const doBlock = /\bdo\s+\$\$[\s\S]*?end\s*\$\$\s*;/gi;
+  const loop =
+    /foreach\s+\w+\s+in\s+array\s+array\[([\s\S]*?)\]\s+loop([\s\S]*?)end\s+loop\s*;?/gi;
+  return sql.replace(doBlock, (block) =>
+    block.replace(loop, (_whole, list: string, body: string) => {
+      const names = [...list.matchAll(/'(\w+)'/g)].map((m) => m[1]);
+      const templates = [
+        ...body.matchAll(
+          /format\(\s*(?:'((?:[^']|'')*)'|\$(\w*)\$([\s\S]*?)\$\2\$)/gi,
         ),
-      )
-      .map((s) => `${s};`)
-      .join("\n");
-  });
+      ].map((m) => (m[1] !== undefined ? m[1].replace(/''/g, "'") : m[3]));
+      return names
+        .flatMap((n) =>
+          templates.map((t) =>
+            t
+              .replace(/%I\s+on\s+%I/gi, `${n}_policy on ${n}`)
+              .replace(/%I/g, n),
+          ),
+        )
+        .map((s) => `\n${s};\n`)
+        .join("");
+    }),
+  );
 }
 
-function balancedBody(sql: string, openParen: number): string {
+export function balancedBody(sql: string, openParen: number): string {
   let depth = 0;
   for (let i = openParen; i < sql.length; i++) {
     if (sql[i] === "(") depth++;
@@ -62,6 +68,28 @@ function balancedBody(sql: string, openParen: number): string {
       return sql.slice(openParen + 1, i);
   }
   throw new Error(`Unbalanced parentheses at ${openParen}`);
+}
+
+function policyExpression(rest: string, keyword: RegExp): string | null {
+  const m = keyword.exec(rest);
+  return m ? balancedBody(rest, m.index + m[0].length - 1).trim() : null;
+}
+
+// True if `expr` has an OR outside any parentheses or string literal.
+export function hasTopLevelOr(expr: string): boolean {
+  const s = expr.replace(/'(?:[^']|'')*'/g, "''");
+  let depth = 0;
+  for (let i = 0; i < s.length; i++) {
+    if (s[i] === "(") depth++;
+    else if (s[i] === ")") depth--;
+    else if (
+      depth === 0 &&
+      /^or\b/i.test(s.slice(i)) &&
+      (i === 0 || /\W/.test(s[i - 1]))
+    )
+      return true;
+  }
+  return false;
 }
 
 export function parseMigrations(files: string[]): Schema {
@@ -95,21 +123,30 @@ export function parseMigrations(files: string[]): Schema {
     else rlsEnabled.delete(t);
   }
 
+  // Statements this parser does not model; the guard fails on them so a human reviews the change.
+  const needsReview = [...sql.matchAll(/\balter\s+table\b[^;]*;/gi)]
+    .map((m) => m[0].replace(/\s+/g, " ").trim())
+    .filter((s) => /\brename\b|\bworkspace_id\b|\bdrop\s+column\b/i.test(s));
+
   const policies: Policy[] = [];
   const policyRe = new RegExp(
     String.raw`\bcreate\s+policy\s+(${IDENT})\s+on\s+(${QUALIFIED})([^;]*);`,
     "gi",
   );
   for (const m of sql.matchAll(policyRe)) {
-    const body = m[3];
-    const cmd = /\bfor\s+(all|select|insert|update|delete)\b/i.exec(body);
+    const rest = m[3];
+    const cmd =
+      /^\s*(?:as\s+\w+\s+)?for\s+(all|select|insert|update|delete)\b/i.exec(
+        rest,
+      );
     policies.push({
       name: normalizeIdent(m[1]),
       table: normalizeIdent(m[2]),
       command: cmd ? cmd[1].toLowerCase() : "all",
-      body,
+      using: policyExpression(rest, /\busing\s*\(/i),
+      check: policyExpression(rest, /\bwith\s+check\s*\(/i),
     });
   }
 
-  return { tables, createTableStatements, rlsEnabled, policies };
+  return { tables, createTableStatements, rlsEnabled, policies, needsReview };
 }

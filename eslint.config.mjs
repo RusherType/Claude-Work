@@ -22,7 +22,7 @@ const eslintConfig = defineConfig([
         "error",
         {
           selector:
-            "Program:has(ExpressionStatement[directive='use client']) MemberExpression[property.name=/SERVICE_ROLE/]",
+            "Program:has(ExpressionStatement[directive='use client']) :matches(Identifier[name=/SERVICE_ROLE/], Literal[value=/SERVICE_ROLE/], TemplateElement[value.raw=/SERVICE_ROLE/])",
           message:
             "The service-role key is server-only; never read it in a client component.",
         },

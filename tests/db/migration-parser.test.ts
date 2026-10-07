@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   expandLoops,
+  hasTopLevelOr,
   normalizeIdent,
   parseMigrations,
 } from "./migration-parser";
@@ -74,7 +75,7 @@ describe("parseMigrations RLS", () => {
       "p:all",
       "q:all",
     ]);
-    expect(s.policies[0].body).toMatch(/has_role\(workspace_id/);
+    expect(s.policies[0].using).toMatch(/^has_role\(workspace_id/);
   });
 });
 
@@ -89,6 +90,72 @@ describe("parseMigrations policies", () => {
       ["p1", "audit_log", "all"],
       ["p 2", "audit_log", "delete"],
       ["p3", "audit_log", "select"],
+    ]);
+  });
+});
+
+describe("expandLoops keeps the rest of the block", () => {
+  it("sees statements after a loop and in a second loop", () => {
+    const s = parseMigrations([
+      `alter table a enable row level security;
+       alter table b enable row level security;
+       do $$
+       declare t text;
+       begin
+         foreach t in array array['c'] loop
+           execute format('alter table %I enable row level security', t);
+         end loop;
+         alter table a disable row level security;
+         foreach t in array array['b'] loop
+           execute format('alter table %I disable row level security', t);
+         end loop;
+       end $$;`,
+    ]);
+    expect([...s.rlsEnabled]).toEqual(["c"]);
+  });
+});
+
+describe("policy expressions", () => {
+  it("extracts using and with check separately", () => {
+    const [p] = parseMigrations([
+      `create policy p on t for all using (has_role(workspace_id, array['owner']::member_role[])) with check (true);`,
+    ]).policies;
+    expect(p.using).toBe(
+      "has_role(workspace_id, array['owner']::member_role[])",
+    );
+    expect(p.check).toBe("true");
+  });
+
+  it("reads FOR only right after the table, so text inside using is ignored", () => {
+    const [p] = parseMigrations([
+      `create policy p on t using (exists (select 1 from x where kind = 'for select'));`,
+    ]).policies;
+    expect(p.command).toBe("all");
+  });
+
+  it("finds top-level OR but not OR inside parens, strings or words", () => {
+    expect(hasTopLevelOr("is_member(workspace_id) or true")).toBe(true);
+    expect(hasTopLevelOr("is_member(workspace_id) OR\ntrue")).toBe(true);
+    expect(hasTopLevelOr("is_member(workspace_id) and (a or b)")).toBe(false);
+    expect(
+      hasTopLevelOr(
+        "has_role(workspace_id, array['owner','or']::member_role[])",
+      ),
+    ).toBe(false);
+    expect(hasTopLevelOr("is_member(workspace_id) and color = 1")).toBe(false);
+  });
+});
+
+describe("needsReview", () => {
+  it("flags renames and workspace_id changes", () => {
+    const s = parseMigrations([
+      `alter table products rename to items;
+       alter table quotes alter column workspace_id drop not null;
+       alter table quotes add column note text;`,
+    ]);
+    expect(s.needsReview).toEqual([
+      "alter table products rename to items;",
+      "alter table quotes alter column workspace_id drop not null;",
     ]);
   });
 });
