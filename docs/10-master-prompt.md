@@ -11,8 +11,9 @@ BEFORE ANY CODE
    hard rules in 10 lines.
 2. Check my machine: node, pnpm, git, docker, supabase CLI, gh. List anything missing with the exact
    Windows install command, and wait for me to install it.
-3. List every account and API key the build will need (Supabase, Anthropic, Voyage, Inngest, Stripe
-   test mode, Shopify Partners, Resend, Sentry, PostHog), in the order each phase needs them. Tell me
+3. List every account and API key the build will need (Supabase, Google Cloud OAuth client, Vercel,
+   Anthropic, Voyage, Inngest, Stripe test mode, Shopify Partners, Resend, Sentry, PostHog, Langfuse
+   or Helicone, Upstash Redis), in the order each phase needs them. Tell me
    which ones Phase 1 needs now. I will put keys in .env.local myself; never ask me to paste a key
    into chat and never read .env files.
 

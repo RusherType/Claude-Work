@@ -5,7 +5,7 @@
 | Done | ID | Epic | Ticket | Done when | Pri | Days | Depends on |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [x] | CD-001 | Foundation | Scaffold repo | Next.js 16.3, TS strict, Tailwind v4, ESLint, Prettier, Vitest, Playwright run; `docs/` holds the pack | P0 | 1 | — |
-| [ ] | CD-002 | Foundation | Supabase schema | Migration 0001 applied locally and to staging; generated types committed | P0 | 1 | CD-001 |
+| [ ] | CD-002 | Foundation | Supabase schema | Migration 0001 applied locally; generated types committed; owner applies it to staging (`supabase link` + `supabase db push`, which Claude Code is not allowed to run) | P0 | 1 | CD-001 |
 | [ ] | CD-003 | Foundation | Auth | Magic link and Google; middleware protects `/app`; sign-out works | P0 | 1 | CD-002 |
 | [ ] | CD-004 | Foundation | Workspaces and roles | Create workspace, invite by email, accept, role guards on server actions | P0 | 2 | CD-003 |
 | [ ] | CD-005 | Foundation | Tenant isolation tests | CI proves workspace A cannot read/write workspace B in every tenant table | P0 | 1 | CD-004 |
@@ -22,7 +22,7 @@
 | [ ] | CD-022 | Catalog | CSV import | Template, mapping, per-row errors, 5,000 rows under 60 s | P0 | 1.5 | CD-002 |
 | [ ] | CD-023 | Catalog | Catalog table | Paginated, filters (status, origin, chapter), search, bulk select, fast at 10,000 rows | P0 | 2 | CD-021 |
 | [ ] | CD-024 | Catalog | Product detail | Editable facts; edit on a confirmed product marks it Outdated | P0 | 1.5 | CD-023 |
-| [ ] | CD-030 | Agent | Fact extraction | Haiku returns schema-valid facts with `missing` list for 30 samples | P0 | 1.5 | CD-021 |
+| [ ] | CD-030 | Agent | Fact extraction | Haiku returns schema-valid facts with `missing` list for 30 sample products (repo fixtures; real Shopify data arrives with CD-021) | P0 | 1.5 | CD-002 |
 | [ ] | CD-031 | Agent | Agent tools | `search_hts`, `get_hts_node`, `search_rulings`, `get_ruling` with tests | P0 | 1.5 | CD-012, CD-013 |
 | [ ] | CD-032 | Agent | Classification loop | Sonnet tool loop, schema-valid result; verify rejects non-leaf codes and revoked/fake rulings | P0 | 3 | CD-030, CD-031 |
 | [ ] | CD-033 | Agent | Confidence routing | Thresholds route to Suggested, Opus re-run, or review; config-driven | P0 | 1 | CD-032 |
