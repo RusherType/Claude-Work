@@ -41,8 +41,53 @@ One entry per working session: date, tickets done, test status, eval score, open
   `rulings.cbp.gov`, `api.voyageai.com` and the container image hosts
   (`pkg-containers.githubusercontent.com`, AWS CloudFront); CD-010, CD-012, CD-013 and a local
   Supabase need them allowed.
-- Migration findings waiting for approval (planned for CD-004/CD-005): cross-tenant foreign keys
+- (Approved and done, see below.) Migration findings waiting for approval: cross-tenant foreign keys
   (composite `(workspace_id, id)` keys), `audit_log` insert must pin `actor_id = auth.uid()`, and
   admins must not be able to grant or remove the owner role.
 - Accounts not created yet: Supabase staging, Google OAuth client, Vercel, Sentry, PostHog, Langfuse,
   Voyage. Keys go in the cloud environment's settings, never in chat or the repo.
+
+## 2026-10-07 (continued)
+
+**Approved by owner ("go"):** migration fixes (cross-workspace links, audit actor, owner role) and
+the CD-003 plan.
+
+**Done (waiting for CI before ticking):**
+
+- Migration 0001 (not yet applied anywhere, so edited in place): composite `(workspace_id, id)`
+  foreign keys between tenant tables; `audit_log` inserts pin `actor_id = auth.uid()`; only owners
+  grant, change or remove the owner role; a workspace always keeps an owner; only `memberships.role`
+  and workspace settings columns are client-updatable; vector search `k` capped at 50; a profile row
+  is created for every new auth user.
+- CD-005: `tests/db/isolation.test.ts`, 159 live tests (every tenant table, workspaces, profiles,
+  audit log, roles, shared data, every composite FK). Mutation-tested: 11 deliberately broken
+  protections were each caught. Runs locally on Postgres 16 + `tests/db/supabase-shim.sql`; CI runs
+  it on real Supabase.
+- CD-003: magic-link and Google sign-in (`@supabase/ssr`, `getClaims`), `proxy.ts` protecting
+  `/app`, `/auth/callback` with open-redirect protection, sign-out, `/app` layout re-checks the
+  session. Playwright: redirect tests run locally; the full magic-link flow runs in CI against the
+  local Supabase mailbox.
+- CD-011: `lib/tariff/rate.ts` parses General, Column 2 and Special rate text into exact decimal
+  strings; 61 tests. Must be re-checked against the real USITC export when CD-010 runs.
+
+**Env vars the app reads:** `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`,
+`NEXT_PUBLIC_AUTH_GOOGLE_ENABLED` (`true` once the Google OAuth client is set up).
+
+**Security follow-ups from the CD-005 audit (assigned to the ticket that builds the feature):**
+
+- CD-020: `integrations` writable only by the service role (OAuth callback); today any owner/admin
+  can claim a `shop_domain` and the global unique key reveals other workspaces' stores.
+- CD-041: classifications status/source/`confirmed_by` set by server code only (members can
+  currently write `broker_verified` and forge `confirmed_by`; same for `answered_by`,
+  `created_by`).
+- CD-070/071: `documents.storage_path` must start with the workspace id; add Storage policies.
+- CD-080: `broker_orders` insert-only for clients; status, payment and verified code via service
+  role.
+- CD-014: platform-admin policies must also require MFA (`aal2`).
+- CD-104: `search_path = ''` on all functions; server-generated ids; api key and audit inserts via
+  the server.
+
+**Test status:** lint, format, typecheck, build, 112 unit tests, 159 + 25 database tests, 8 local
+Playwright tests green. CI on GitHub has been stuck in "queued" since 15:12 UTC.
+
+**Open questions:** none new.
