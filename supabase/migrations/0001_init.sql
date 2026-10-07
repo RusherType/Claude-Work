@@ -376,8 +376,10 @@ grant update (role) on memberships to authenticated;
 create or replace function ensure_workspace_has_owner() returns trigger
 language plpgsql security definer set search_path = '' as $$
 begin
-  if old.role = 'owner'
-     and exists (select 1 from public.workspaces w where w.id = old.workspace_id)
+  if old.role <> 'owner' then return null; end if;
+  -- Serialise owner changes per workspace so two owners stepping down at once cannot both pass.
+  perform 1 from public.workspaces w where w.id = old.workspace_id for update;
+  if exists (select 1 from public.workspaces w where w.id = old.workspace_id)
      and not exists (select 1 from public.memberships m
                      where m.workspace_id = old.workspace_id and m.role = 'owner') then
     raise exception 'A workspace must keep at least one owner' using errcode = 'check_violation';
@@ -515,3 +517,8 @@ end $$;
 
 create trigger on_auth_user_created after insert on auth.users
 for each row execute function handle_new_user();
+
+-- ============ Privileges ============
+-- API roles never need TRUNCATE (which bypasses RLS), TRIGGER or REFERENCES.
+revoke truncate, trigger, references on all tables in schema public from anon, authenticated;
+alter default privileges in schema public revoke truncate, trigger, references on tables from anon, authenticated;

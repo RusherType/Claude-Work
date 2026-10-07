@@ -50,6 +50,16 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - `audit_log` inserts must set `actor_id = auth.uid()`; there is no update or delete policy.
 - Trigger `on_auth_user_created` creates a `profiles` row for every new auth user.
 
+## Database functions
+
+- `is_member(ws)`, `has_role(ws, roles[])`, `is_platform_admin()` — RLS helpers.
+- `current_revision(market)` — latest imported revision.
+- `match_tariff_lines(embedding, revision_id, k)` and `match_rulings(embedding, hts_prefix, k)` — vector search for agent tools (revoked rulings excluded; `k` is clamped to 1–50).
+- `active_measures(code, origin, mode, on_date)` — published overlays that apply.
+- Trigger `products_outdated` — a changed `content_hash` on a confirmed product marks its classification `outdated`.
+- Constraint trigger `memberships_keep_owner` (`ensure_workspace_has_owner`) — deferred to commit; rejects any change that leaves an existing workspace with no owner. Account deletion (GDPR) must therefore delete the workspace or hand ownership over before deleting a sole owner's auth user.
+- Trigger `on_auth_user_created` (`handle_new_user`) — creates the `profiles` row for each new auth user; sign-up metadata cannot set `is_platform_admin`.
+
 ## Tests
 
 - `tests/db/rls-coverage.test.ts` statically checks every migration: RLS on every table, a required

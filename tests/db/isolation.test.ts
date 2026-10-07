@@ -241,6 +241,9 @@ async function fingerprint(table: string, where: string, params: unknown[]) {
 
 // As `uid`, try each statement with no WHERE clause (so only RLS limits it), then return the
 // fingerprint of the protected rows seen with full privileges, in the same transaction.
+// Rows that reference `table` are cleared first (inside the rolled-back transaction) so a foreign
+// key error on some other row cannot abort the statement and hide what RLS allowed. Each attempt
+// must either succeed or be refused by RLS/privileges (42501); any other error fails the test.
 async function attemptThenFingerprint(
   uid: string,
   statements: string[],
@@ -250,14 +253,26 @@ async function attemptThenFingerprint(
 ) {
   await db.query("begin");
   try {
+    const { rows: children } = await db.query(
+      `select distinct conrelid::regclass::text as child from pg_constraint
+       where contype = 'f' and confrelid = $1::regclass and conrelid <> confrelid`,
+      [`public.${table}`],
+    );
+    if (children.length > 0)
+      await db.query(
+        `truncate ${children.map((c) => c.child).join(", ")} cascade`,
+      );
     await claims(uid);
     for (const sql of statements) {
       await db.query("savepoint s");
       try {
         await db.query(sql);
         await db.query("release savepoint s");
-      } catch {
+      } catch (e) {
         await db.query("rollback to savepoint s");
+        const code = (e as { code?: string }).code;
+        if (code !== "42501")
+          throw new Error(`"${sql}" failed with ${code}, which proves nothing`);
       }
     }
     await db.query("reset role");
@@ -505,6 +520,28 @@ suite("tenant isolation (live database)", () => {
         }
       },
     );
+
+    it("every link between tenant tables includes workspace_id", async () => {
+      const { rows } = await db.query(
+        `select c.conname
+         from pg_constraint c
+         join pg_attribute src on src.attrelid = c.conrelid and src.attname = 'workspace_id'
+         join pg_attribute dst on dst.attrelid = c.confrelid and dst.attname = 'workspace_id'
+         where c.contype = 'f' and c.connamespace = 'public'::regnamespace
+           and not (src.attnum = any(c.conkey))
+         order by 1`,
+      );
+      expect(rows.map((r) => r.conname)).toEqual([]);
+    });
+
+    it("API roles cannot truncate tables", async () => {
+      const { rows } = await db.query(
+        `select table_name from information_schema.role_table_grants
+         where table_schema = 'public' and privilege_type = 'TRUNCATE'
+           and grantee in ('anon', 'authenticated')`,
+      );
+      expect(rows).toEqual([]);
+    });
 
     it("rejects re-pointing an existing row at the other workspace", async () => {
       const code = await errorCode(

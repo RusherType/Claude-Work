@@ -4,7 +4,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { safeNext } from "@/lib/auth/redirect";
-import { googleAuthEnabled } from "@/lib/env";
+import { googleAuthEnabled, siteUrl } from "@/lib/env";
 import { createClient } from "@/lib/supabase/server";
 
 export type SignInState =
@@ -18,10 +18,15 @@ const emailSchema = z.object({
 });
 
 async function callbackUrl(next: string) {
-  const h = await headers();
-  const origin = z.url().safeParse(h.get("origin"));
-  if (!origin.success || !/^https?:/.test(origin.data)) return null;
-  return `${origin.data}/auth/callback?next=${encodeURIComponent(safeNext(next))}`;
+  // Prefer the configured site URL; fall back to the request origin (checked by Next against Host
+  // for Server Actions, and by Supabase's redirect allow list).
+  let base = siteUrl();
+  if (!base) {
+    const origin = z.url().safeParse((await headers()).get("origin"));
+    if (!origin.success || !/^https?:/.test(origin.data)) return null;
+    base = origin.data;
+  }
+  return `${base}/auth/callback?next=${encodeURIComponent(safeNext(next))}`;
 }
 
 export async function sendMagicLink(

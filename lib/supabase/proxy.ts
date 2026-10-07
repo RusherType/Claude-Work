@@ -2,6 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { isProtectedPath } from "@/lib/auth/redirect";
 import { supabaseEnv } from "@/lib/env";
+import { AUTH_COOKIE_OPTIONS } from "./cookies";
 
 /**
  * Runs from proxy.ts on every page request: refreshes the Supabase session cookie, sends
@@ -16,6 +17,7 @@ export async function updateSession(request: NextRequest) {
   let userId: string | null = null;
   if (env) {
     const supabase = createServerClient(env.url, env.publishableKey, {
+      cookieOptions: AUTH_COOKIE_OPTIONS,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -54,8 +56,12 @@ export async function updateSession(request: NextRequest) {
   return response;
 }
 
-// Keep refreshed auth cookies when replacing the response with a redirect.
+// Keep refreshed auth cookies (and their no-cache headers) when replacing the response.
 function withCookies(target: NextResponse, source: NextResponse) {
   source.cookies.getAll().forEach((c) => target.cookies.set(c));
+  for (const h of ["cache-control", "expires", "pragma"]) {
+    const v = source.headers.get(h);
+    if (v) target.headers.set(h, v);
+  }
   return target;
 }

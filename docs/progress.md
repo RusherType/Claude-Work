@@ -87,7 +87,26 @@ the CD-003 plan.
 - CD-104: `search_path = ''` on all functions; server-generated ids; api key and audit inserts via
   the server.
 
-**Test status:** lint, format, typecheck, build, 112 unit tests, 159 + 25 database tests, 8 local
-Playwright tests green. CI on GitHub has been stuck in "queued" since 15:12 UTC.
+- CD-004 is the real gate for the items above: once users can create workspaces, every tenant
+  table is writable through the Data API. CD-004 must revoke direct client writes on
+  `integrations` and `broker_orders` and restrict `classifications`/`documents` columns before it
+  ships, then each feature ticket opens what it needs.
+
+**Fixed after the second review and audit:** open redirect via dot segments (`/.//evil.example`)
+in `safeNext`; `token_hash` callback branch removed (login CSRF); HTTP-only, Secure session
+cookies; baseline security headers (frame-ancestors none, nosniff, referrer policy, HSTS in
+production); sign-in links use `NEXT_PUBLIC_SITE_URL` when set; owner trigger locks the workspace
+row; `TRUNCATE`/`TRIGGER`/`REFERENCES` revoked from API roles; isolation writes clear referencing
+rows first and fail on any error other than 42501; `/app` loading and error states. 15 broken
+protections now each fail the suite.
+
+**Still open from the audit:**
+
+- Sign-in rate limits and CAPTCHA (needs Upstash and Turnstile/hCaptcha accounts) — CD-104.
+- Production Supabase must keep `enable_confirmations = true` (set locally); add to launch
+  checklist.
+
+**Test status:** lint, format, typecheck, build, 124 unit tests, 161 + 25 database tests, 8 local
+Playwright tests green. GitHub CI was stuck in "queued" from 15:12 to about 16:05 UTC.
 
 **Open questions:** none new.
