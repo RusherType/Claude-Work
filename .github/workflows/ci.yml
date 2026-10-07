@@ -2,11 +2,12 @@ name: CI
 
 on:
   push:
+    branches: [main, "claude/**"]
   pull_request:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
@@ -15,10 +16,11 @@ jobs:
   check:
     name: Lint, typecheck, unit tests, build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -27,13 +29,25 @@ jobs:
       - run: pnpm format:check
       - run: pnpm typecheck
       - run: pnpm test
-      - name: Block the service-role key in client code (docs/03-security.md)
+      - name: Keep the service-role key out of the browser (docs/03-security.md)
         run: |
-          bad=$(grep -rlE 'SERVICE_ROLE' --include='*.ts' --include='*.tsx' app components lib 2>/dev/null \
-            | xargs -r grep -lE "^['\"]use client['\"]" || true)
-          pub=$(grep -rnE 'NEXT_PUBLIC_[A-Z_]*SERVICE_ROLE' --include='*.ts' --include='*.tsx' --include='*.mjs' . \
-            --exclude-dir=node_modules --exclude-dir=.next || true)
-          if [ -n "$bad$pub" ]; then echo "Service-role key referenced from client code:"; echo "$bad"; echo "$pub"; exit 1; fi
+          set -f
+          src='--include=*.ts --include=*.tsx --include=*.js --include=*.jsx --include=*.mjs --include=*.cjs'
+          dirs=$(ls -d app components lib 2>/dev/null || true)
+          fail=0
+          # 1. Every file that mentions SERVICE_ROLE must import "server-only", so a client import fails the build.
+          if [ -n "$dirs" ]; then
+            missing=$(grep -rlZ $src SERVICE_ROLE $dirs | xargs -0r grep -L "import ['\"]server-only['\"]" || true)
+            if [ -n "$missing" ]; then echo "::error::SERVICE_ROLE used without import \"server-only\":"; echo "$missing"; fail=1; fi
+            # 2. No client component may mention it directly.
+            client=$(grep -rlZ $src SERVICE_ROLE $dirs | xargs -0r grep -lE "^\s*['\"]use client['\"]" || true)
+            if [ -n "$client" ]; then echo "::error::SERVICE_ROLE in a client component:"; echo "$client"; fail=1; fi
+          fi
+          # 3. Never expose it as a public env var, anywhere in the repo.
+          pub=$(grep -rnE 'NEXT_PUBLIC_[A-Z0-9_]*SERVICE_ROLE' . --exclude-dir=node_modules --exclude-dir=.next \
+            --exclude-dir=.git --exclude-dir=docs || true)
+          if [ -n "$pub" ]; then echo "::error::Public env var exposes the service-role key:"; echo "$pub"; fail=1; fi
+          exit $fail
       - name: Audit production dependencies
         run: pnpm audit --prod --audit-level high
       - name: Audit all dependencies (report only)
@@ -44,10 +58,11 @@ jobs:
   e2e:
     name: Playwright
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -56,7 +71,7 @@ jobs:
       - run: pnpm test:e2e
         env:
           CI: true
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: playwright-report
@@ -66,10 +81,11 @@ jobs:
   db:
     name: Migrations and generated types
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: 22
           cache: pnpm
@@ -77,7 +93,9 @@ jobs:
       - name: Start local Supabase and apply migrations
         run: pnpm exec supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor
       - name: Lint the database schema
-        run: pnpm exec supabase db lint --level error
+        run: pnpm exec supabase db lint --local --level error --fail-on error
+      - name: Security advisors (RLS disabled, exposed functions, ...)
+        run: pnpm exec supabase db advisors --local --type security --fail-on error
       - name: Generate types
         run: mkdir -p lib/supabase && pnpm db:types
       - name: Print generated types
@@ -89,7 +107,7 @@ jobs:
             exit 1
           fi
           git diff --exit-code lib/supabase/types.ts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
           name: supabase-types
