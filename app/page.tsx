@@ -29,7 +29,7 @@ export default function Home() {
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <a
-            href="#"
+            href="/sign-in"
             className="bg-brand focus-visible:ring-brand dark:text-background rounded-md px-4 py-2.5 text-sm font-medium text-white focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none"
           >
             Start free trial
