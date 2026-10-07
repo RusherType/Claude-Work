@@ -110,3 +110,17 @@ protections now each fail the suite.
 Playwright tests green. GitHub CI was stuck in "queued" from 15:12 to about 16:05 UTC.
 
 **Open questions:** none new.
+
+## 2026-10-07 (ticket status)
+
+- **Ticked:** CD-005 (isolation suite; reviewer APPROVED, security audit PASSED, CI green on real
+  Supabase at 6674cfb) and CD-011 (rate parser, 61 tests).
+- **Done but not ticked:**
+  - CD-002: migration applies cleanly on local Supabase in CI and types are committed; waiting on
+    the owner's staging apply (`supabase link` + `supabase db push`).
+  - CD-003: magic-link sign-in, sign-out and `/app` protection pass in CI against real Supabase
+    Auth; Google sign-in is untested until a Google OAuth client exists.
+  - CD-006: CI done; Vercel previews need a Vercel account. Previews must set
+    `NEXT_PUBLIC_SITE_URL` (e.g. from `VERCEL_URL`) and add the preview domain to Supabase's
+    redirect allow list, or magic-link sign-in fails there.
+- **Mutation testing:** 17 deliberately broken protections, each caught by the suite.

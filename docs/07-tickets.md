@@ -8,11 +8,11 @@
 | [ ] | CD-002 | Foundation | Supabase schema | Migration 0001 applied locally; generated types committed; owner applies it to staging (`supabase link` + `supabase db push`, which Claude Code is not allowed to run) | P0 | 1 | CD-001 |
 | [ ] | CD-003 | Foundation | Auth | Magic link and Google; middleware protects `/app`; sign-out works | P0 | 1 | CD-002 |
 | [ ] | CD-004 | Foundation | Workspaces and roles | Create workspace, invite by email, accept, role guards on server actions | P0 | 2 | CD-003 |
-| [ ] | CD-005 | Foundation | Tenant isolation tests | CI proves workspace A cannot read/write workspace B in every tenant table | P0 | 1 | CD-004 |
+| [x] | CD-005 | Foundation | Tenant isolation tests | CI proves workspace A cannot read/write workspace B in every tenant table | P0 | 1 | CD-004 |
 | [ ] | CD-006 | Foundation | CI and previews | GitHub Actions: lint, typecheck, tests, build; Vercel preview per PR | P0 | 0.5 | CD-001 |
 | [ ] | CD-007 | Foundation | Observability | Sentry, PostHog, LLM tracing; test error and trace visible | P0 | 0.5 | CD-001 |
 | [ ] | CD-010 | Tariff data | HTS importer | Inngest job pulls all 99 chapters from USITC into a revision; idempotent | P0 | 2 | CD-002 |
-| [ ] | CD-011 | Tariff data | Rate parser | Parses "Free", "5.3%", "2.4¢/kg", "25¢/kg + 3.4%" etc.; 50 unit tests | P0 | 1.5 | CD-010 |
+| [x] | CD-011 | Tariff data | Rate parser | Parses "Free", "5.3%", "2.4¢/kg", "25¢/kg + 3.4%" etc.; 50 unit tests | P0 | 1.5 | CD-010 |
 | [ ] | CD-012 | Tariff data | Tariff embeddings | Leaf lines embedded with path text; sensible top-10 for 20 test queries | P0 | 1 | CD-010 |
 | [ ] | CD-013 | Tariff data | Rulings index | Rulings ingested politely (or licensed), chunked, embedded, revoked status; `match_rulings` works | P0 | 3 | CD-002 |
 | [ ] | CD-014 | Tariff data | Admin editors | Create/edit/publish measures and fees with sources; platform admin only | P0 | 2 | CD-004 |
