@@ -58,7 +58,7 @@ jobs:
   e2e:
     name: Playwright
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -68,6 +68,16 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
+      - name: Start local Supabase (auth and mailbox for the sign-in flow)
+        run: pnpm exec supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,postgres-meta
+      - name: Point the app at the local Supabase
+        run: |
+          eval "$(pnpm exec supabase status -o env)"
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=$API_URL"
+            echo "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${PUBLISHABLE_KEY:-$ANON_KEY}"
+            echo "MAILPIT_URL=${MAILPIT_URL:-${INBUCKET_URL:-http://127.0.0.1:54324}}"
+          } >> "$GITHUB_ENV"
       - run: pnpm test:e2e
         env:
           CI: true
@@ -96,6 +106,11 @@ jobs:
         run: pnpm exec supabase db lint --local --level error --fail-on error
       - name: Security advisors (RLS disabled, exposed functions, ...)
         run: pnpm exec supabase db advisors --local --type security --fail-on error
+      - name: Tenant isolation and migration guard tests (CD-005)
+        run: pnpm test:db
+        env:
+          TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+          REQUIRE_DB_TESTS: "1"
       - name: Generate types
         run: mkdir -p lib/supabase && pnpm db:types
       - name: Print generated types

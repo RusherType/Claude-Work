@@ -41,14 +41,15 @@ create table integrations (
   access_token_secret_id uuid, -- Supabase Vault secret id
   status text default 'active',
   last_synced_at timestamptz,
-  unique (provider, shop_domain)
+  unique (provider, shop_domain),
+  unique (workspace_id, id)
 );
 
 -- ============ Catalog ============
 create table products (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces on delete cascade,
-  integration_id uuid references integrations on delete set null,
+  integration_id uuid,
   external_id text,
   sku text,
   title text not null,
@@ -65,14 +66,17 @@ create table products (
   content_hash text,
   created_at timestamptz default now(),
   updated_at timestamptz default now(),
-  unique (workspace_id, integration_id, external_id)
+  unique (workspace_id, integration_id, external_id),
+  unique (workspace_id, id),
+  foreign key (workspace_id, integration_id) references integrations (workspace_id, id)
+    on delete set null (integration_id)
 );
 create index on products (workspace_id, sku);
 
 create table agent_runs (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces on delete cascade,
-  product_id uuid references products on delete cascade,
+  product_id uuid,
   market market_code not null default 'US',
   model text not null,
   prompt_version text not null,
@@ -83,13 +87,15 @@ create table agent_runs (
   cost_usd numeric(10,5),
   error text,
   started_at timestamptz default now(),
-  finished_at timestamptz
+  finished_at timestamptz,
+  unique (workspace_id, id),
+  foreign key (workspace_id, product_id) references products (workspace_id, id) on delete cascade
 );
 
 create table classifications (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces on delete cascade,
-  product_id uuid not null references products on delete cascade,
+  product_id uuid not null,
   market market_code not null default 'US',
   code text,
   tariff_revision_id uuid,
@@ -100,25 +106,29 @@ create table classifications (
   reasoning text,
   alternatives jsonb,
   citations jsonb,
-  agent_run_id uuid references agent_runs,
+  agent_run_id uuid,
   override_reason text,
   confirmed_by uuid references auth.users,
   confirmed_at timestamptz,
   is_current boolean default true,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  foreign key (workspace_id, product_id) references products (workspace_id, id) on delete cascade,
+  foreign key (workspace_id, agent_run_id) references agent_runs (workspace_id, id)
 );
 create unique index one_current_class on classifications (product_id, market) where is_current;
 
 create table agent_questions (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces on delete cascade,
-  product_id uuid not null references products on delete cascade,
-  agent_run_id uuid references agent_runs,
+  product_id uuid not null,
+  agent_run_id uuid,
   question text not null,
   options jsonb,
   answer text,
   answered_by uuid references auth.users,
-  answered_at timestamptz
+  answered_at timestamptz,
+  foreign key (workspace_id, product_id) references products (workspace_id, id) on delete cascade,
+  foreign key (workspace_id, agent_run_id) references agent_runs (workspace_id, id)
 );
 
 -- ============ Shared reference data ============
@@ -215,19 +225,22 @@ create table quotes (
   destination market_code default 'US',
   totals jsonb,
   created_by uuid references auth.users,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  unique (workspace_id, id)
 );
 
 create table quote_lines (
   id uuid primary key default gen_random_uuid(),
-  quote_id uuid not null references quotes on delete cascade,
+  quote_id uuid not null,
   workspace_id uuid not null references workspaces on delete cascade,
-  product_id uuid references products,
+  product_id uuid,
   quantity int not null,
   unit_value numeric(12,2),
   code_used text,
   used_suggested boolean default false,
-  breakdown jsonb
+  breakdown jsonb,
+  foreign key (workspace_id, quote_id) references quotes (workspace_id, id) on delete cascade,
+  foreign key (workspace_id, product_id) references products (workspace_id, id)
 );
 
 create table alerts (
@@ -239,16 +252,19 @@ create table alerts (
   measure_id uuid references tariff_measures,
   effective_from date,
   read_at timestamptz,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  unique (workspace_id, id)
 );
 
 create table alert_items (
-  alert_id uuid references alerts on delete cascade,
+  alert_id uuid,
   workspace_id uuid not null references workspaces on delete cascade,
-  product_id uuid references products on delete cascade,
+  product_id uuid,
   cost_before numeric(12,2),
   cost_after numeric(12,2),
-  primary key (alert_id, product_id)
+  primary key (alert_id, product_id),
+  foreign key (workspace_id, alert_id) references alerts (workspace_id, id) on delete cascade,
+  foreign key (workspace_id, product_id) references products (workspace_id, id) on delete cascade
 );
 
 create table documents (
@@ -264,7 +280,7 @@ create table documents (
 create table broker_orders (
   id uuid primary key default gen_random_uuid(),
   workspace_id uuid not null references workspaces on delete cascade,
-  product_id uuid not null references products on delete cascade,
+  product_id uuid not null,
   broker_name text,
   status text default 'requested',
   price_usd numeric(8,2),
@@ -272,7 +288,8 @@ create table broker_orders (
   verified_code text,
   broker_notes text,
   created_at timestamptz default now(),
-  completed_at timestamptz
+  completed_at timestamptz,
+  foreign key (workspace_id, product_id) references products (workspace_id, id) on delete cascade
 );
 
 create table subscriptions (
@@ -330,13 +347,48 @@ alter table workspaces enable row level security;
 create policy ws_select on workspaces for select using (is_member(id));
 create policy ws_update on workspaces for update using (has_role(id, array['owner','admin']::member_role[]));
 create policy ws_delete on workspaces for delete using (has_role(id, array['owner']::member_role[]));
+-- deleted_at (soft delete, docs/05-app-flow.md Flow F) is set by the server after an owner check.
+revoke update on workspaces from anon, authenticated;
+grant update (name, home_country, business_type, default_origin, default_mode, default_incoterm)
+  on workspaces to authenticated;
 -- inserts go through a server action that creates the workspace and the owner membership together
 
 alter table memberships enable row level security;
 create policy mem_select on memberships for select using (is_member(workspace_id));
-create policy mem_write on memberships for all
-  using (has_role(workspace_id, array['owner','admin']::member_role[]))
-  with check (has_role(workspace_id, array['owner','admin']::member_role[]));
+-- Owners manage every membership. Admins manage non-owner memberships only, so they can never
+-- grant, change or remove the owner role (docs/03-security.md: "Yes (not owners)").
+create policy mem_owner_write on memberships for all
+  using (has_role(workspace_id, array['owner']::member_role[]))
+  with check (has_role(workspace_id, array['owner']::member_role[]));
+create policy mem_admin_insert on memberships for insert
+  with check (has_role(workspace_id, array['admin']::member_role[]) and role <> 'owner');
+create policy mem_admin_update on memberships for update
+  using (has_role(workspace_id, array['admin']::member_role[]) and role <> 'owner')
+  with check (has_role(workspace_id, array['admin']::member_role[]) and role <> 'owner');
+create policy mem_admin_delete on memberships for delete
+  using (has_role(workspace_id, array['admin']::member_role[]) and role <> 'owner');
+-- A membership's workspace and user never change; only its role does.
+revoke update on memberships from anon, authenticated;
+grant update (role) on memberships to authenticated;
+
+-- A workspace must always keep at least one owner (checked at commit, so ownership can be
+-- handed over within one transaction; skipped when the workspace itself is being deleted).
+create or replace function ensure_workspace_has_owner() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if old.role = 'owner'
+     and exists (select 1 from public.workspaces w where w.id = old.workspace_id)
+     and not exists (select 1 from public.memberships m
+                     where m.workspace_id = old.workspace_id and m.role = 'owner') then
+    raise exception 'A workspace must keep at least one owner' using errcode = 'check_violation';
+  end if;
+  return null;
+end $$;
+
+create constraint trigger memberships_keep_owner
+  after update or delete on memberships
+  deferrable initially deferred
+  for each row execute function ensure_workspace_has_owner();
 
 alter table profiles enable row level security;
 create policy prof_self on profiles for select using (id = auth.uid());
@@ -381,7 +433,8 @@ create policy subs_select on subscriptions for select using (is_member(workspace
 -- audit_log: insert and select only, never update or delete
 alter table audit_log enable row level security;
 create policy audit_select on audit_log for select using (is_member(workspace_id));
-create policy audit_insert on audit_log for insert with check (is_member(workspace_id));
+create policy audit_insert on audit_log for insert
+  with check (is_member(workspace_id) and actor_id = auth.uid());
 
 -- ============ RLS: shared reference data ============
 do $$
@@ -408,7 +461,7 @@ returns table (id bigint, code text, description text, full_path text, is_leaf b
 language sql stable as $$
   select id, code, description, full_path, is_leaf, 1 - (embedding <=> query_embedding)
   from tariff_lines where revision_id = rev and embedding is not null
-  order by embedding <=> query_embedding limit k;
+  order by embedding <=> query_embedding limit least(greatest(k, 1), 50);
 $$;
 
 create or replace function match_rulings(query_embedding vector(1024), hts_prefix text default null, k int default 8)
@@ -418,7 +471,7 @@ language sql stable as $$
   from ruling_chunks c join rulings r on r.number = c.ruling_number
   where r.status <> 'revoked'
     and (hts_prefix is null or exists (select 1 from unnest(r.hts_codes) h where h like hts_prefix || '%'))
-  order by c.embedding <=> query_embedding limit k;
+  order by c.embedding <=> query_embedding limit least(greatest(k, 1), 50);
 $$;
 
 create or replace function active_measures(p_code text, p_origin char(2), p_mode text, p_on date)
@@ -447,3 +500,18 @@ end $$;
 
 create trigger products_outdated before update on products
 for each row execute function mark_outdated_on_edit();
+
+-- ============ Auth ============
+-- Every new auth user gets a profile row (CD-003). Runs as the table owner; the user cannot set
+-- is_platform_admin through sign-up metadata.
+create or replace function handle_new_user() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  insert into public.profiles (id, full_name)
+  values (new.id, left(new.raw_user_meta_data ->> 'full_name', 200))
+  on conflict (id) do nothing;
+  return new;
+end $$;
+
+create trigger on_auth_user_created after insert on auth.users
+for each row execute function handle_new_user();

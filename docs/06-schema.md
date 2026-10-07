@@ -39,11 +39,30 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - `tariff_measures.origin_countries = '{**}'` means all origins.
 - Money is `numeric`, never float.
 - Embeddings are 1024-dimension; change the column type if the chosen Voyage model differs.
+- Links between tenant rows use composite foreign keys on `(workspace_id, <parent>_id)` referencing
+  `(workspace_id, id)`, so a row can only point at a parent in its own workspace (FK checks bypass
+  RLS, so this is enforced by the keys, not the policies).
+- `memberships`: owners manage every membership; admins manage non-owner memberships only, so only
+  an owner can grant, change or remove the owner role. Only `role` is updatable, and a deferred
+  constraint trigger keeps at least one owner in every workspace.
+- `workspaces`: users can update settings columns only; `deleted_at` (soft delete) is set by the
+  server after an owner check.
+- `audit_log` inserts must set `actor_id = auth.uid()`; there is no update or delete policy.
+- Trigger `on_auth_user_created` creates a `profiles` row for every new auth user.
 
-## Database functions
+## Tests
 
-- `is_member(ws)`, `has_role(ws, roles[])`, `is_platform_admin()` — RLS helpers.
-- `current_revision(market)` — latest imported revision.
-- `match_tariff_lines(embedding, revision_id, k)` and `match_rulings(embedding, hts_prefix, k)` — vector search for agent tools (revoked rulings excluded).
-- `active_measures(code, origin, mode, on_date)` — published overlays that apply.
-- Trigger `products_outdated` — a changed `content_hash` on a confirmed product marks its classification `outdated`.
+- `tests/db/rls-coverage.test.ts` statically checks every migration: RLS on every table, a required
+  `workspace_id` on tenant tables, policies scoped by workspace, read-only shared data.
+- `tests/db/isolation.test.ts` (CD-005) signs in as members of two workspaces against a live
+  database and proves neither can read, change, move or link to the other's rows in any tenant
+  table, that each role can only insert what docs/03-security.md allows, and covers `workspaces`,
+  `profiles`, `audit_log`, owner rules and shared reference data. It refuses to run against a
+  non-local database.
+  - CI: runs against `supabase start` with `TEST_DATABASE_URL` and `REQUIRE_DB_TESTS=1`.
+  - Locally with Supabase: `pnpm db:start`, then
+    `TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres pnpm test:db`.
+  - Locally on plain Postgres (no Docker): create an empty database, apply
+    `tests/db/supabase-shim.sql` and then the migrations with `psql`, and point
+    `TEST_DATABASE_URL` at it. The shim fakes `auth.users`, `auth.uid()` and the Supabase roles;
+    never apply it to a Supabase project.
