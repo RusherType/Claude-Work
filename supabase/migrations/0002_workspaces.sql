@@ -203,10 +203,12 @@ begin
   if exists (select 1 from public.workspaces w where w.id = inv.workspace_id and w.deleted_at is not null)
      or inv.invited_by is null
      or not exists (
+       -- FOR SHARE waits for a concurrent removal or demotion of the inviter to commit.
        select 1 from public.memberships m
        where m.workspace_id = inv.workspace_id and m.user_id = inv.invited_by
          and m.role = any (case when inv.role = 'owner' then array['owner']::public.member_role[]
                                 else array['owner','admin']::public.member_role[] end)
+       for share
      ) then
     raise exception 'invitation_invalid';
   end if;
@@ -320,9 +322,12 @@ language plpgsql security definer set search_path = '' as $$
 begin
   if auth.uid() is not null and (
     exists (select 1 from public.broker_orders b where b.product_id = old.id and b.workspace_id = old.workspace_id)
+    -- Any code a person ever confirmed or overrode, or a broker verified, whatever its status now
+    -- (a content edit turns confirmed codes into 'outdated').
     or exists (select 1 from public.classifications c
                where c.product_id = old.id and c.workspace_id = old.workspace_id
-                 and c.status in ('confirmed', 'broker_verified'))
+                 and (c.confirmed_at is not null or c.source in ('override', 'broker')
+                      or c.status in ('confirmed', 'broker_verified', 'outdated')))
   ) then
     raise exception 'product_has_records' using errcode = '23503';
   end if;

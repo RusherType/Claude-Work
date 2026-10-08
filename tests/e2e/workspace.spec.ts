@@ -69,7 +69,9 @@ test.describe("workspaces and invitations", () => {
     await page.reload();
     const row = page.getByRole("listitem").filter({ hasText: memberEmail });
     await expect(row).toBeVisible();
-    await row.getByLabel(`Role for ${memberEmail}`).selectOption("member");
+    await row
+      .getByLabel(`Role for ${memberEmail}`, { exact: true })
+      .selectOption("member");
     await row
       .getByRole("button", { name: `Save role for ${memberEmail}` })
       .click();

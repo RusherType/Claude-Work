@@ -637,6 +637,22 @@ describeDb("workspace functions (live database)", () => {
       },
     );
 
+    it("editing a product first does not unlock deleting its confirmed code", async () => {
+      const code = await run(user.member, async (q) => {
+        await fixture("confirmed");
+        await q("update products set content_hash = 'zz' where id = $1", [
+          product,
+        ]);
+        try {
+          await q("delete from products where id = $1", [product]);
+          return null;
+        } catch (e) {
+          return (e as Error).message;
+        }
+      });
+      expect(code).toBe("product_has_records");
+    });
+
     it("a product with only suggestions can be deleted", async () => {
       const deleted = await run(user.member, async (q) => {
         await fixture("suggested");
