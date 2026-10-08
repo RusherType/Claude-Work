@@ -36,7 +36,10 @@ test.describe("workspaces and invitations", () => {
     // Team page: owner is listed; create an invitation link.
     await page.getByRole("link", { name: "Manage team" }).click();
     await expect(page.getByRole("heading", { name: "Team" })).toBeVisible();
-    await expect(page.getByText(ownerEmail).first()).toBeVisible();
+    // The header hides the email on narrow screens; check the member list itself.
+    await expect(
+      page.getByRole("listitem").filter({ hasText: ownerEmail }),
+    ).toBeVisible();
     await page.getByLabel("Email").fill(memberEmail);
     await page.getByLabel("Role").first().selectOption("member");
     await page.getByRole("button", { name: "Create invitation" }).click();
