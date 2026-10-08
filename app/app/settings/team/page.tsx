@@ -2,12 +2,12 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import {
   ROLE_LABELS,
+  ROLES,
   canChangeRole,
   canManageTeam,
   canRemove,
   invitableRoles,
   isRole,
-  ROLES,
 } from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceContext } from "@/lib/workspace";
@@ -21,23 +21,33 @@ export default async function TeamPage() {
   if (!ctx.workspace) redirect("/app");
   const { workspace } = ctx;
   const supabase = await createClient();
+  if (!supabase) throw new Error("Sign-in is not configured");
 
-  const { data: members, error } = await supabase!.rpc("workspace_members", {
+  // Errors surface through app/app/error.tsx (plain message + retry).
+  const members = await supabase.rpc("workspace_members", {
     p_workspace: workspace.id,
   });
-  if (error) throw new Error("Could not load team members");
+  if (members.error) throw new Error("Could not load team members");
 
   const manage = canManageTeam(workspace.role);
-  const { data: invitations } = manage
-    ? await supabase!
-        .from("invitations")
-        .select("id, email, role, expires_at")
-        .eq("workspace_id", workspace.id)
-        .is("accepted_at", null)
-        .is("revoked_at", null)
-        .gt("expires_at", new Date().toISOString())
-        .order("created_at", { ascending: false })
-    : { data: [] };
+  let invitations: {
+    id: string;
+    email: string;
+    role: string;
+    expires_at: string;
+  }[] = [];
+  if (manage) {
+    const result = await supabase
+      .from("invitations")
+      .select("id, email, role, expires_at")
+      .eq("workspace_id", workspace.id)
+      .is("accepted_at", null)
+      .is("revoked_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false });
+    if (result.error) throw new Error("Could not load invitations");
+    invitations = result.data;
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -54,8 +64,9 @@ export default async function TeamPage() {
           Members
         </h2>
         <ul className="border-border bg-surface divide-border divide-y rounded-lg border">
-          {(members ?? []).map((m) => {
+          {members.data.map((m) => {
             const role = isRole(m.role) ? m.role : "viewer";
+            const isSelf = m.user_id === ctx.user.id;
             const roleOptions = ROLES.filter(
               (r) => r === role || canChangeRole(workspace.role, role, r),
             );
@@ -70,16 +81,18 @@ export default async function TeamPage() {
                   </p>
                   <p className="text-muted truncate text-xs">
                     {m.email}
-                    {m.user_id === ctx.user.id ? " · you" : ""}
+                    {isSelf ? " · you" : ""}
                   </p>
                 </div>
                 <MemberActions
+                  workspaceId={workspace.id}
                   userId={m.user_id}
+                  email={m.email}
                   role={role}
                   roleOptions={roleOptions}
                   canChange={roleOptions.length > 1}
-                  canRemove={canRemove(workspace.role, role)}
-                  isSelf={m.user_id === ctx.user.id}
+                  canRemove={canRemove(workspace.role, role, isSelf)}
+                  isSelf={isSelf}
                 />
               </li>
             );
@@ -92,9 +105,12 @@ export default async function TeamPage() {
           <h2 id="invite" className="font-semibold">
             Invite someone
           </h2>
-          <InviteForm roles={invitableRoles(workspace.role)} />
+          <InviteForm
+            workspaceId={workspace.id}
+            roles={invitableRoles(workspace.role)}
+          />
           <h3 className="mt-2 text-sm font-semibold">Pending invitations</h3>
-          {invitations && invitations.length > 0 ? (
+          {invitations.length > 0 ? (
             <ul className="border-border bg-surface divide-border divide-y rounded-lg border">
               {invitations.map((inv) => (
                 <li
@@ -110,7 +126,9 @@ export default async function TeamPage() {
                       {new Date(inv.expires_at).toLocaleDateString("en-GB")}
                     </span>
                   </span>
-                  <RevokeInvitation invitationId={inv.id} />
+                  {(inv.role !== "owner" || workspace.role === "owner") && (
+                    <RevokeInvitation invitationId={inv.id} email={inv.email} />
+                  )}
                 </li>
               ))}
             </ul>

@@ -46,8 +46,13 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - `memberships`: owners manage every membership; admins manage non-owner memberships only, so only
   an owner can grant, change or remove the owner role. Only `role` is updatable, and a deferred
   constraint trigger keeps at least one owner in every workspace.
-- `workspaces`: users can update settings columns only; `deleted_at` (soft delete) is set by the
-  server after an owner check.
+- `workspaces`: users can update settings columns only. There is no client delete: deleting is a
+  soft delete (`deleted_at`) with a 7-day grace period, done by the server after an owner check.
+- Anyone may leave a workspace (`mem_self_delete`); the owner trigger still keeps one owner.
+- Products with confirmed codes or broker orders cannot be deleted by clients
+  (`products_protect_records`), since the cascade would erase compliance records.
+- `is_member`, `has_role`, `is_platform_admin` and every other SECURITY DEFINER function pin
+  `search_path = ''` (checked by a test).
 - `audit_log` inserts must set `actor_id = auth.uid()`; there is no update or delete policy.
 - Trigger `on_auth_user_created` creates a `profiles` row for every new auth user.
 
@@ -62,9 +67,9 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - Trigger `on_auth_user_created` (`handle_new_user`) — creates the `profiles` row for each new auth user; sign-up metadata cannot set `is_platform_admin`.
 
 - `create_workspace(name, home_country, business_type)` — creates the workspace with the caller as owner (max 20 owned per user) and audits it.
-- `create_invitation(workspace, email, role)` — owner/admin only; only owners invite owners; returns the plain token once and stores its SHA-256; replaces any open invite for that address.
-- `accept_invitation(token)` — the signed-in user's confirmed email must match; single use; adds the membership (keeps an existing role) and audits it.
-- `revoke_invitation(invitation)` and `workspace_members(workspace)` (members with emails, for members only).
+- `create_invitation(workspace, email, role)` — owner/admin only; only owners invite (or replace an invitation for) owners; at most 200 unexpired open invitations; returns the plain token once and stores its SHA-256; replaces any open invite for that address. Audit rows record the role, not the email.
+- `accept_invitation(token)` — the signed-in user's confirmed email must match; single use; the inviter must still hold the role needed to send it and the workspace must not be deleted; adds the membership (keeps an existing role) and audits it.
+- `revoke_invitation(invitation)` (admins cannot revoke owner invitations; audited only when something changed) and `workspace_members(workspace)` (members with emails, for members only).
 - Trigger `memberships_audit` — every membership insert, role change and removal is written to `audit_log` with the acting user. `quotes.created_by` is always set to the signed-in user.
 
 ## Tests

@@ -34,9 +34,48 @@ function Message({ state }: { state: ActionState }) {
   return null;
 }
 
-export function InviteForm({ roles }: { roles: Role[] }) {
+function CopyLink({ link }: { link: string }) {
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input
+        readOnly
+        aria-label="Invitation link"
+        value={link}
+        className={`${field} min-w-0 flex-1 font-mono text-xs`}
+        onFocus={(e) => e.currentTarget.select()}
+      />
+      <button
+        type="button"
+        className={secondary}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(link);
+            setCopy("copied");
+          } catch {
+            setCopy("failed");
+          }
+        }}
+      >
+        {copy === "copied" ? "Copied" : "Copy link"}
+      </button>
+      {copy === "failed" && (
+        <p role="alert" className="text-risk w-full text-sm">
+          Couldn&apos;t copy automatically. Select the link and copy it.
+        </p>
+      )}
+    </div>
+  );
+}
+
+export function InviteForm({
+  workspaceId,
+  roles,
+}: {
+  workspaceId: string;
+  roles: Role[];
+}) {
   const [state, action, pending] = useActionState(inviteMember, idle);
-  const [copied, setCopied] = useState(false);
 
   return (
     <div className="flex flex-col gap-3">
@@ -45,6 +84,7 @@ export function InviteForm({ roles }: { roles: Role[] }) {
         className="flex flex-wrap items-end gap-3"
         noValidate
       >
+        <input type="hidden" name="workspaceId" value={workspaceId} />
         <div className="flex flex-col gap-1.5">
           <label htmlFor="invite-email" className="text-sm font-medium">
             Email
@@ -59,7 +99,7 @@ export function InviteForm({ roles }: { roles: Role[] }) {
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="invite-role" className="text-sm font-medium">
-            Role
+            Invite as
           </label>
           <select
             id="invite-role"
@@ -85,25 +125,7 @@ export function InviteForm({ roles }: { roles: Role[] }) {
             Send this link to them. It works once, for that email address, for 7
             days.
           </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              readOnly
-              aria-label="Invitation link"
-              value={state.link}
-              className={`${field} min-w-0 flex-1 font-mono text-xs`}
-              onFocus={(e) => e.currentTarget.select()}
-            />
-            <button
-              type="button"
-              className={secondary}
-              onClick={async () => {
-                await navigator.clipboard.writeText(state.link!);
-                setCopied(true);
-              }}
-            >
-              {copied ? "Copied" : "Copy link"}
-            </button>
-          </div>
+          <CopyLink key={state.link} link={state.link} />
         </div>
       )}
     </div>
@@ -111,14 +133,18 @@ export function InviteForm({ roles }: { roles: Role[] }) {
 }
 
 export function MemberActions({
+  workspaceId,
   userId,
+  email,
   role,
   roleOptions,
   canChange,
   canRemove,
   isSelf,
 }: {
+  workspaceId: string;
   userId: string;
+  email: string;
   role: Role;
   roleOptions: Role[];
   canChange: boolean;
@@ -139,9 +165,10 @@ export function MemberActions({
       <div className="flex flex-wrap items-center gap-2">
         {canChange ? (
           <form action={roleAction} className="flex items-center gap-2">
+            <input type="hidden" name="workspaceId" value={workspaceId} />
             <input type="hidden" name="userId" value={userId} />
             <label htmlFor={`role-${userId}`} className="sr-only">
-              Role
+              Role for {email}
             </label>
             <select
               id={`role-${userId}`}
@@ -155,7 +182,12 @@ export function MemberActions({
                 </option>
               ))}
             </select>
-            <button type="submit" disabled={rolePending} className={secondary}>
+            <button
+              type="submit"
+              disabled={rolePending}
+              aria-label={`Save role for ${email}`}
+              className={secondary}
+            >
               Save
             </button>
           </form>
@@ -170,14 +202,16 @@ export function MemberActions({
             onSubmit={(e) => {
               const msg = isSelf
                 ? "Leave this workspace? You will lose access."
-                : "Remove this person from the workspace?";
+                : `Remove ${email} from the workspace?`;
               if (!window.confirm(msg)) e.preventDefault();
             }}
           >
+            <input type="hidden" name="workspaceId" value={workspaceId} />
             <input type="hidden" name="userId" value={userId} />
             <button
               type="submit"
               disabled={removePending}
+              aria-label={isSelf ? "Leave this workspace" : `Remove ${email}`}
               className={`${secondary} text-risk`}
             >
               {isSelf ? "Leave" : "Remove"}
@@ -191,12 +225,23 @@ export function MemberActions({
   );
 }
 
-export function RevokeInvitation({ invitationId }: { invitationId: string }) {
+export function RevokeInvitation({
+  invitationId,
+  email,
+}: {
+  invitationId: string;
+  email: string;
+}) {
   const [state, action, pending] = useActionState(revokeInvitation, idle);
   return (
     <form action={action} className="flex items-center gap-2">
       <input type="hidden" name="invitationId" value={invitationId} />
-      <button type="submit" disabled={pending} className={secondary}>
+      <button
+        type="submit"
+        disabled={pending}
+        aria-label={`Revoke invitation for ${email}`}
+        className={secondary}
+      >
         Revoke
       </button>
       <Message state={state} />

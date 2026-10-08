@@ -73,3 +73,9 @@ describe("canRemove", () => {
     expect(canRemove(actor, target)).toBe(ok);
   });
 });
+
+describe("leaving", () => {
+  it("lets every role remove themselves", () => {
+    for (const r of ROLES) expect(canRemove(r, r, true)).toBe(true);
+  });
+});

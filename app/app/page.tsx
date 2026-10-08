@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ROLE_LABELS } from "@/lib/auth/roles";
+import { COUNTRIES } from "@/lib/countries";
 import { getWorkspaceContext } from "@/lib/workspace";
 import { CreateWorkspaceForm } from "./create-workspace-form";
 
@@ -22,7 +23,7 @@ export default async function AppHome() {
             teammate invited you, open the link from their invitation instead.
           </p>
         </div>
-        <CreateWorkspaceForm />
+        <CreateWorkspaceForm countries={COUNTRIES} />
       </section>
     );
   }

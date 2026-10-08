@@ -660,20 +660,15 @@ suite("tenant isolation (live database)", () => {
       expect(code).toBe("42501");
     });
 
-    it("can be deleted only by an owner", async () => {
-      const sql = "delete from workspaces where id = $1";
-      expect(
-        await as(
-          user.adminA,
-          async () => (await db.query(sql, [ws.A])).rowCount,
-        ),
-      ).toBe(0);
-      expect(
-        await as(
-          user.ownerA,
-          async () => (await db.query(sql, [ws.A])).rowCount,
-        ),
-      ).toBe(1);
+    it("cannot be hard-deleted by any client, even the owner (soft delete via the server)", async () => {
+      for (const uid of [user.ownerA, user.adminA]) {
+        const code = await errorCode(
+          uid,
+          "delete from workspaces where id = $1",
+          [ws.A],
+        );
+        expect(code).toBe("42501");
+      }
     });
   });
 
@@ -814,6 +809,32 @@ suite("tenant isolation (live database)", () => {
         ],
         "memberships",
         "user_id = $1",
+        [uid],
+      );
+      expect(after).toBe(before);
+    });
+
+    it.each([
+      ["member", user.memberA],
+      ["viewer", user.viewerA],
+    ])("a %s can leave, but cannot remove anyone else", async (_role, uid) => {
+      const leave = await as(
+        uid,
+        async () =>
+          (
+            await db.query(
+              "delete from memberships where workspace_id = $1 and user_id = $2",
+              [ws.A, uid],
+            )
+          ).rowCount,
+      );
+      expect(leave).toBe(1);
+      const before = await fingerprint("memberships", "user_id <> $1", [uid]);
+      const after = await attemptThenFingerprint(
+        uid,
+        ["delete from memberships"],
+        "memberships",
+        "user_id <> $1",
         [uid],
       );
       expect(after).toBe(before);

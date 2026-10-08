@@ -38,8 +38,9 @@ export function canChangeRole(actor: Role, from: Role, to: Role): boolean {
   return false;
 }
 
-/** Whether `actor` may remove a teammate who has `target` role. */
-export function canRemove(actor: Role, target: Role): boolean {
+/** Whether `actor` may remove a teammate who has `target` role. Anyone may leave themselves. */
+export function canRemove(actor: Role, target: Role, isSelf = false): boolean {
+  if (isSelf) return true;
   if (actor === "owner") return true;
   if (actor === "admin") return target !== "owner";
   return false;

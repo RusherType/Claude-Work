@@ -41,11 +41,11 @@ test.describe("workspaces and invitations", () => {
       page.getByRole("listitem").filter({ hasText: ownerEmail }),
     ).toBeVisible();
     await page.getByLabel("Email").fill(memberEmail);
-    await page.getByLabel("Role").first().selectOption("member");
+    await page.getByLabel("Invite as").selectOption("viewer");
     await page.getByRole("button", { name: "Create invitation" }).click();
     const link = await page.getByLabel("Invitation link").inputValue();
     expect(link).toMatch(/\/invite\/[0-9a-f]{64}$/);
-    await expect(page.getByText(`${memberEmail} · Member`)).toBeVisible();
+    await expect(page.getByText(`${memberEmail} · Viewer`)).toBeVisible();
 
     // The invitee opens the link in their own browser, signs in, and accepts.
     const other = await browser.newContext();
@@ -57,7 +57,7 @@ test.describe("workspaces and invitations", () => {
     await expect(
       invitee.getByRole("heading", { name: `Welcome to ${company}` }),
     ).toBeVisible();
-    await expect(invitee.getByText(`Member · ${company}`)).toBeVisible();
+    await expect(invitee.getByText(`Viewer · ${company}`)).toBeVisible();
 
     // The same link cannot be used again.
     await invitee.goto(link);
@@ -65,18 +65,20 @@ test.describe("workspaces and invitations", () => {
     await expect(invitee.getByText(/no longer valid/)).toBeVisible();
     await other.close();
 
-    // Owner sees the new member and makes them a viewer.
+    // Owner sees the new viewer and makes them a member.
     await page.reload();
     const row = page.getByRole("listitem").filter({ hasText: memberEmail });
     await expect(row).toBeVisible();
-    await row.getByLabel("Role").selectOption("viewer");
-    await row.getByRole("button", { name: "Save" }).click();
+    await row.getByLabel(`Role for ${memberEmail}`).selectOption("member");
+    await row
+      .getByRole("button", { name: `Save role for ${memberEmail}` })
+      .click();
     await expect(row.getByRole("status")).toContainText("Role updated");
 
     // The last owner cannot leave.
     page.once("dialog", (d) => d.accept());
     const me = page.getByRole("listitem").filter({ hasText: ownerEmail });
-    await me.getByRole("button", { name: "Leave" }).click();
+    await me.getByRole("button", { name: "Leave this workspace" }).click();
     await expect(me.getByRole("alert")).toContainText("at least one owner");
   });
 });

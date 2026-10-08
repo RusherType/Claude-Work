@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/supabase/server";
+import { signOut } from "../../app/actions";
 import { AcceptInvitationForm } from "./accept-form";
 
 export const metadata: Metadata = {
@@ -35,6 +36,12 @@ export default async function InvitePage({
             invitation must have been sent to this address.
           </p>
           <AcceptInvitationForm token={token} />
+          <form action={signOut}>
+            <input type="hidden" name="next" value={`/invite/${token}`} />
+            <button type="submit" className="text-brand text-sm underline">
+              Not you? Sign in with a different address
+            </button>
+          </form>
         </>
       ) : (
         <p

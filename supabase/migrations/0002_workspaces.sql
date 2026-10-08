@@ -21,6 +21,14 @@ revoke insert, update, delete on integrations, broker_orders, api_keys, classifi
 -- Members join only by accepting an invitation (or by creating the workspace).
 revoke insert on memberships from anon, authenticated;
 drop policy mem_admin_insert on memberships;
+-- Anyone may leave a workspace (the deferred owner trigger still keeps one owner).
+create policy mem_self_delete on memberships for delete
+  using (user_id = auth.uid() and is_member(workspace_id));
+
+-- Deleting a workspace is a soft delete with a 7-day grace period (docs/05-app-flow.md Flow F),
+-- done by the server after an owner check; clients never hard-delete.
+drop policy ws_delete on workspaces;
+revoke delete on workspaces from anon, authenticated;
 
 -- quotes.created_by is always the signed-in user.
 create or replace function set_created_by() returns trigger
@@ -134,6 +142,9 @@ begin
   if p_role = 'owner' and not public.has_role(p_workspace, array['owner']::public.member_role[]) then
     raise exception 'only_owners_invite_owners' using errcode = '42501';
   end if;
+  if exists (select 1 from public.workspaces w where w.id = p_workspace and w.deleted_at is not null) then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
   if addr !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' or length(addr) > 254 then
     raise exception 'invalid_email' using errcode = '22023';
   end if;
@@ -144,8 +155,18 @@ begin
     raise exception 'already_member' using errcode = '22023';
   end if;
   if (select count(*) from public.invitations i
-      where i.workspace_id = p_workspace and i.accepted_at is null and i.revoked_at is null) >= 200 then
+      where i.workspace_id = p_workspace and i.accepted_at is null and i.revoked_at is null
+        and i.expires_at > now()) >= 200 then
     raise exception 'too_many_invitations' using errcode = '22023';
+  end if;
+
+  -- Only an owner may replace an open owner invitation.
+  if exists (
+    select 1 from public.invitations i
+    where i.workspace_id = p_workspace and i.email = addr and i.role = 'owner'
+      and i.accepted_at is null and i.revoked_at is null
+  ) and not public.has_role(p_workspace, array['owner']::public.member_role[]) then
+    raise exception 'only_owners_invite_owners' using errcode = '42501';
   end if;
 
   -- A new invitation replaces any open one for the same address.
@@ -158,7 +179,7 @@ begin
   returning id into inv;
   insert into public.audit_log (workspace_id, actor_id, action, entity, entity_id, data)
   values (p_workspace, uid, 'invitation.create', 'invitation', inv,
-          jsonb_build_object('email', addr, 'role', p_role));
+          jsonb_build_object('role', p_role));
   return token;
 end $$;
 
@@ -177,6 +198,18 @@ begin
     raise exception 'invitation_invalid';
   end if;
   if inv.expires_at < now() then raise exception 'invitation_expired'; end if;
+  -- The workspace must still exist, and the inviter must still hold the role needed to invite
+  -- (removing or demoting someone also cancels what they sent).
+  if exists (select 1 from public.workspaces w where w.id = inv.workspace_id and w.deleted_at is not null)
+     or inv.invited_by is null
+     or not exists (
+       select 1 from public.memberships m
+       where m.workspace_id = inv.workspace_id and m.user_id = inv.invited_by
+         and m.role = any (case when inv.role = 'owner' then array['owner']::public.member_role[]
+                                else array['owner','admin']::public.member_role[] end)
+     ) then
+    raise exception 'invitation_invalid';
+  end if;
 
   select lower(u.email) into user_email from auth.users u
   where u.id = uid and u.email_confirmed_at is not null;
@@ -197,15 +230,24 @@ create or replace function revoke_invitation(p_invitation uuid) returns void
 language plpgsql security definer set search_path = '' as $$
 declare
   ws uuid;
+  inv_role public.member_role;
+  changed int;
 begin
-  select workspace_id into ws from public.invitations where id = p_invitation;
+  select workspace_id, role into ws, inv_role from public.invitations where id = p_invitation;
   if ws is null or not public.has_role(ws, array['owner','admin']::public.member_role[]) then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+  -- Admins never manage owners, including owner invitations.
+  if inv_role = 'owner' and not public.has_role(ws, array['owner']::public.member_role[]) then
     raise exception 'forbidden' using errcode = '42501';
   end if;
   update public.invitations set revoked_at = now()
   where id = p_invitation and accepted_at is null and revoked_at is null;
-  insert into public.audit_log (workspace_id, actor_id, action, entity, entity_id)
-  values (ws, auth.uid(), 'invitation.revoke', 'invitation', p_invitation);
+  get diagnostics changed = row_count;
+  if changed > 0 then
+    insert into public.audit_log (workspace_id, actor_id, action, entity, entity_id)
+    values (ws, auth.uid(), 'invitation.revoke', 'invitation', p_invitation);
+  end if;
 end $$;
 
 -- Team list with emails (auth.users is not readable by clients). Members of the workspace only.
@@ -236,3 +278,63 @@ revoke execute on function set_created_by(), audit_membership_change(), ensure_w
 
 -- Keep new tables free of TRUNCATE/TRIGGER/REFERENCES for API roles (see 0001).
 revoke truncate, trigger, references on invitations from anon, authenticated;
+
+-- ============ Hardening from the CD-004 security audit ============
+-- RLS helpers: never resolve unqualified names through search_path (a temp table could shadow
+-- memberships). Same signatures, so every policy keeps working.
+create or replace function is_member(ws uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.memberships where workspace_id = ws and user_id = auth.uid());
+$$;
+
+create or replace function has_role(ws uuid, roles member_role[]) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.memberships
+                 where workspace_id = ws and user_id = auth.uid() and role = any(roles));
+$$;
+
+create or replace function is_platform_admin() returns boolean
+language sql stable security definer set search_path = '' as $$
+  select coalesce((select is_platform_admin from public.profiles where id = auth.uid()), false);
+$$;
+
+-- A content change on a product marks its confirmed classifications outdated. Clients cannot
+-- write classifications since the lockdown, so this runs as the table owner.
+create or replace function mark_outdated_on_edit() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if new.content_hash is distinct from old.content_hash then
+    update public.classifications set status = 'outdated'
+    where product_id = new.id and workspace_id = new.workspace_id and is_current
+      and status in ('confirmed', 'broker_verified');
+  end if;
+  new.updated_at := now();
+  return new;
+end $$;
+
+-- Deleting a product would cascade into compliance records clients cannot touch directly
+-- (confirmed codes, broker orders). Clients must keep such products; jobs and the service role
+-- (auth.uid() is null) are not limited.
+create or replace function protect_product_records() returns trigger
+language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is not null and (
+    exists (select 1 from public.broker_orders b where b.product_id = old.id and b.workspace_id = old.workspace_id)
+    or exists (select 1 from public.classifications c
+               where c.product_id = old.id and c.workspace_id = old.workspace_id
+                 and c.status in ('confirmed', 'broker_verified'))
+  ) then
+    raise exception 'product_has_records' using errcode = '23503';
+  end if;
+  return old;
+end $$;
+create trigger products_protect_records before delete on products
+for each row execute function protect_product_records();
+
+revoke execute on function mark_outdated_on_edit(), protect_product_records()
+  from public, anon, authenticated;
+
+-- Writes that only missing policies were blocking: remove the grants too.
+revoke insert, update, delete on agent_runs, subscriptions, tariff_revisions, tariff_lines,
+  rulings, ruling_chunks, fee_schedules from anon, authenticated;
+revoke insert, delete on profiles, workspaces from anon, authenticated;

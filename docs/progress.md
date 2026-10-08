@@ -140,3 +140,14 @@ Phase 4; until then the inviter copies the link (owner's decision).
 isolation suite extended to `invitations` and the stricter insert matrix (194 tests); role helper,
 country and error-message unit tests; Playwright end-to-end flow (create, invite, accept in a
 second browser, reuse refused, role change, last owner cannot leave) runs in CI.
+
+**CD-004 review and audit round 1:** reviewer found 10 issues, security audit PASSED with 4
+mediums; all fixed. Forms post their workspace id (no stale-tab cross-workspace actions); admins
+cannot revoke or replace owner invitations; expired invitations no longer count toward the cap;
+anyone can leave; no client hard-delete of workspaces; invitations from a removed/demoted inviter
+stop working; RLS helpers pin `search_path = ''`; product content edits mark confirmed codes
+outdated again; products with confirmed codes or broker orders cannot be deleted by clients;
+leftover write grants revoked; Team page accessible names, error states and copy-link handling.
+Next.js patched to 16.3.8 (GHSA-cjq9-62q9-8jv4). Database test files now run one at a time (they
+share one database and take table locks). 12 more deliberately broken rules, each caught.
+Deferred: invite token in the URL path (L4) — scrub `/invite/*` when PostHog/Sentry land (CD-007).

@@ -15,6 +15,8 @@ const MESSAGES: Record<string, string> = {
   invitation_expired: "This invitation has expired. Ask for a new one.",
   invitation_wrong_email:
     "This invitation was sent to a different email address. Sign in with that address to accept it.",
+  product_has_records:
+    "This product has confirmed codes or broker orders, so it can't be deleted.",
   "A workspace must keep at least one owner":
     "A workspace must keep at least one owner. Make someone else an owner first.",
 };
@@ -28,6 +30,8 @@ export function workspaceErrorMessage(
   if (!error) return GENERIC_ERROR;
   if (error.message && MESSAGES[error.message]) return MESSAGES[error.message];
   if (error.code === "42501") return MESSAGES.forbidden;
+  if (error.code === "23505")
+    return "That was just done in another tab or by a teammate. Refresh the page.";
   if (error.code === "23514" && error.message?.includes("owner"))
     return MESSAGES["A workspace must keep at least one owner"];
   return GENERIC_ERROR;

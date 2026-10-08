@@ -12,12 +12,8 @@ import {
 } from "@/lib/auth/roles";
 import { isCountryCode } from "@/lib/countries";
 import { siteUrl } from "@/lib/env";
-import { createClient } from "@/lib/supabase/server";
-import {
-  getWorkspaceContext,
-  listMyWorkspaces,
-  selectWorkspace,
-} from "@/lib/workspace";
+import { createClient, getCurrentUser } from "@/lib/supabase/server";
+import { listMyWorkspaces, selectWorkspace } from "@/lib/workspace";
 import { GENERIC_ERROR, workspaceErrorMessage } from "@/lib/workspace-errors";
 
 // Every action validates input with Zod, checks the role here for a clear message, and relies on
@@ -29,7 +25,22 @@ export type ActionState =
   | { status: "ok"; message?: string; link?: string };
 
 const err = (message: string): ActionState => ({ status: "error", message });
+const forbidden = () => err(workspaceErrorMessage({ message: "forbidden" }));
 const TEAM_PATH = "/app/settings/team";
+
+/**
+ * The signed-in user and their role in the workspace the form was shown for. Forms post the
+ * workspace id explicitly, so a stale tab can never act on a different selected workspace.
+ */
+async function actorIn(workspaceId: unknown) {
+  const id = z.uuid().safeParse(workspaceId);
+  const user = await getCurrentUser();
+  if (!id.success || !user) return null;
+  const workspace = (await listMyWorkspaces(user.id)).find(
+    (w) => w.id === id.data,
+  );
+  return workspace ? { user, workspace } : null;
+}
 
 // ---------- Create and switch ----------
 
@@ -39,7 +50,9 @@ const createSchema = z.object({
     .trim()
     .min(1, "Enter a workspace name.")
     .max(120, "Use 120 characters or fewer."),
-  homeCountry: z.string().refine(isCountryCode, "Choose a home country."),
+  homeCountry: z
+    .string({ error: "Choose a home country." })
+    .refine(isCountryCode, "Choose a home country."),
   businessType: z.enum(["dtc_to_us", "importer", "both"], {
     error: "Choose what you do.",
   }),
@@ -69,15 +82,8 @@ export async function createWorkspace(
 }
 
 export async function switchWorkspace(formData: FormData): Promise<void> {
-  const id = z.uuid().safeParse(formData.get("workspaceId"));
-  const ctx = await getWorkspaceContext();
-  if (!ctx) redirect("/sign-in");
-  if (
-    id.success &&
-    (await listMyWorkspaces(ctx.user.id)).some((w) => w.id === id.data)
-  ) {
-    await selectWorkspace(id.data);
-  }
+  const actor = await actorIn(formData.get("workspaceId"));
+  if (actor) await selectWorkspace(actor.workspace.id);
   redirect("/app");
 }
 
@@ -106,9 +112,8 @@ export async function inviteMember(
   });
   if (!parsed.success)
     return err(parsed.error.issues[0]?.message ?? GENERIC_ERROR);
-  const ctx = await getWorkspaceContext();
-  if (!ctx?.workspace)
-    return err(workspaceErrorMessage({ message: "forbidden" }));
+  const ctx = await actorIn(formData.get("workspaceId"));
+  if (!ctx) return forbidden();
   if (!invitableRoles(ctx.workspace.role).includes(parsed.data.role)) {
     return err(
       parsed.data.role === "owner"
@@ -192,26 +197,25 @@ export async function changeMemberRole(
     role: formData.get("role"),
   });
   if (!parsed.success) return err(GENERIC_ERROR);
-  const ctx = await getWorkspaceContext();
-  if (!ctx?.workspace)
-    return err(workspaceErrorMessage({ message: "forbidden" }));
+  const ctx = await actorIn(formData.get("workspaceId"));
+  if (!ctx) return forbidden();
   const current = await memberRole(ctx.workspace.id, parsed.data.userId);
   if (
     !current ||
     !canChangeRole(ctx.workspace.role, current, parsed.data.role)
   ) {
-    return err(workspaceErrorMessage({ message: "forbidden" }));
+    return forbidden();
   }
   const supabase = await createClient();
-  const { data, error } = await supabase!
+  if (!supabase) return err(GENERIC_ERROR);
+  const { data, error } = await supabase
     .from("memberships")
     .update({ role: parsed.data.role })
     .eq("workspace_id", ctx.workspace.id)
     .eq("user_id", parsed.data.userId)
     .select("user_id");
   if (error) return err(workspaceErrorMessage(error));
-  if (!data?.length)
-    return err(workspaceErrorMessage({ message: "forbidden" }));
+  if (!data?.length) return forbidden();
   revalidatePath(TEAM_PATH);
   return { status: "ok", message: "Role updated." };
 }
@@ -222,24 +226,23 @@ export async function removeMember(
 ): Promise<ActionState> {
   const parsed = memberSchema.safeParse({ userId: formData.get("userId") });
   if (!parsed.success) return err(GENERIC_ERROR);
-  const ctx = await getWorkspaceContext();
-  if (!ctx?.workspace)
-    return err(workspaceErrorMessage({ message: "forbidden" }));
+  const ctx = await actorIn(formData.get("workspaceId"));
+  if (!ctx) return forbidden();
+  const isSelf = parsed.data.userId === ctx.user.id;
   const target = await memberRole(ctx.workspace.id, parsed.data.userId);
-  if (!target || !canRemove(ctx.workspace.role, target)) {
-    return err(workspaceErrorMessage({ message: "forbidden" }));
-  }
+  if (!target || !canRemove(ctx.workspace.role, target, isSelf))
+    return forbidden();
   const supabase = await createClient();
-  const { data, error } = await supabase!
+  if (!supabase) return err(GENERIC_ERROR);
+  const { data, error } = await supabase
     .from("memberships")
     .delete()
     .eq("workspace_id", ctx.workspace.id)
     .eq("user_id", parsed.data.userId)
     .select("user_id");
   if (error) return err(workspaceErrorMessage(error));
-  if (!data?.length)
-    return err(workspaceErrorMessage({ message: "forbidden" }));
-  if (parsed.data.userId === ctx.user.id) {
+  if (!data?.length) return forbidden();
+  if (isSelf) {
     await selectWorkspace(null);
     redirect("/app");
   }

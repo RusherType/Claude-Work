@@ -1,7 +1,6 @@
 "use client";
 
 import { useActionState } from "react";
-import { COUNTRIES } from "@/lib/countries";
 import { createWorkspace, type ActionState } from "./workspace-actions";
 
 const BUSINESS_TYPES = [
@@ -13,7 +12,11 @@ const BUSINESS_TYPES = [
 const input =
   "border-border bg-surface focus-visible:ring-brand rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none";
 
-export function CreateWorkspaceForm() {
+export function CreateWorkspaceForm({
+  countries,
+}: {
+  countries: { code: string; name: string }[];
+}) {
   const [state, action, pending] = useActionState<ActionState, FormData>(
     createWorkspace,
     {
@@ -49,7 +52,7 @@ export function CreateWorkspaceForm() {
           <option value="" disabled>
             Choose a country
           </option>
-          {COUNTRIES.map((c) => (
+          {countries.map((c) => (
             <option key={c.code} value={c.code}>
               {c.name}
             </option>
