@@ -164,7 +164,7 @@ begin
   if exists (
     select 1 from public.invitations i
     where i.workspace_id = p_workspace and i.email = addr and i.role = 'owner'
-      and i.accepted_at is null and i.revoked_at is null
+      and i.accepted_at is null and i.revoked_at is null and i.expires_at > now()
   ) and not public.has_role(p_workspace, array['owner']::public.member_role[]) then
     raise exception 'only_owners_invite_owners' using errcode = '42501';
   end if;

@@ -279,6 +279,22 @@ describeDb("workspace functions (live database)", () => {
     ).toBeNull();
   });
 
+  it("an expired owner invitation does not block an admin from inviting that address", async () => {
+    await invite(user.owner, email("lapsed-owner"), "owner");
+    await db.query(
+      "update invitations set expires_at = now() - interval '1 minute' where email = $1",
+      [email("lapsed-owner")],
+    );
+    expect(
+      await tryAs(
+        db,
+        user.admin,
+        "select create_invitation($1, $2, 'member')",
+        [ws, email("lapsed-owner")],
+      ),
+    ).toBeNull();
+  });
+
   it("does not count expired invitations toward the open-invitation cap", async () => {
     const err = await run(user.admin, async (q) => {
       await q("reset role");

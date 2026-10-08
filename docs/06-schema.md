@@ -53,7 +53,8 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   (`products_protect_records`), since the cascade would erase compliance records.
 - `is_member`, `has_role`, `is_platform_admin` and every other SECURITY DEFINER function pin
   `search_path = ''` (checked by a test).
-- `audit_log` inserts must set `actor_id = auth.uid()`; there is no update or delete policy.
+- `audit_log`: no client insert, update or delete; rows are written only by database functions and
+  triggers, with `actor_id = auth.uid()`.
 - Trigger `on_auth_user_created` creates a `profiles` row for every new auth user.
 
 ## Database functions
