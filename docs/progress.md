@@ -151,3 +151,12 @@ leftover write grants revoked; Team page accessible names, error states and copy
 Next.js patched to 16.3.8 (GHSA-cjq9-62q9-8jv4). Database test files now run one at a time (they
 share one database and take table locks). 12 more deliberately broken rules, each caught.
 Deferred: invite token in the URL path (L4) — scrub `/invite/*` when PostHog/Sentry land (CD-007).
+
+**CD-004 ticked:** reviewer APPROVED, security audit PASSED (two rounds), CI green at a86f9bf
+including the end-to-end invite flow on desktop and mobile against real Supabase. Final round also
+closed an edit-then-delete bypass for confirmed codes and an accept-vs-removal race (inviter
+membership locked FOR SHARE, verified with two concurrent sessions).
+
+**Phase 1 status:** done CD-001, CD-004, CD-005, CD-011. Done but waiting on the owner: CD-002
+(staging apply), CD-003 (Google OAuth client), CD-006 (Vercel account). Blocked on network access
+and accounts: CD-007 (Sentry, PostHog, Langfuse), CD-010 (hts.usitc.gov), CD-012 (Voyage).

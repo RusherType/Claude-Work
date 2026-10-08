@@ -7,7 +7,7 @@
 | [x] | CD-001 | Foundation | Scaffold repo | Next.js 16.3, TS strict, Tailwind v4, ESLint, Prettier, Vitest, Playwright run; `docs/` holds the pack | P0 | 1 | — |
 | [ ] | CD-002 | Foundation | Supabase schema | Migration 0001 applied locally; generated types committed; owner applies it to staging (`supabase link` + `supabase db push`, which Claude Code is not allowed to run) | P0 | 1 | CD-001 |
 | [ ] | CD-003 | Foundation | Auth | Magic link and Google; middleware protects `/app`; sign-out works | P0 | 1 | CD-002 |
-| [ ] | CD-004 | Foundation | Workspaces and roles | Create workspace, invite by email, accept, role guards on server actions | P0 | 2 | CD-003 |
+| [x] | CD-004 | Foundation | Workspaces and roles | Create workspace, invite by email, accept, role guards on server actions | P0 | 2 | CD-003 |
 | [x] | CD-005 | Foundation | Tenant isolation tests | CI proves workspace A cannot read/write workspace B in every tenant table | P0 | 1 | CD-004 |
 | [ ] | CD-006 | Foundation | CI and previews | GitHub Actions: lint, typecheck, tests, build; Vercel preview per PR | P0 | 0.5 | CD-001 |
 | [ ] | CD-007 | Foundation | Observability | Sentry, PostHog, LLM tracing; test error and trace visible | P0 | 0.5 | CD-001 |
