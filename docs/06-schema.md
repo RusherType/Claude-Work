@@ -8,19 +8,20 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 
 | Table | Kind | Holds | Write access |
 | --- | --- | --- | --- |
-| `workspaces`, `memberships`, `profiles` | Tenant | Companies, members, roles | Owner/admin |
-| `integrations` | Tenant | Shopify shop, Vault secret id for token | Owner/admin |
+| `workspaces`, `memberships`, `profiles` | Tenant | Companies, members, roles | Created by `create_workspace` / `accept_invitation`; settings and roles by owner/admin |
+| `integrations` | Tenant | Shopify shop, Vault secret id for token | Server (OAuth callback, CD-020) |
 | `products` | Tenant | Catalog items and extracted facts | Owner/admin/member |
-| `classifications` | Tenant | Every code suggested/confirmed/overridden/verified, per market; one current per product+market | Owner/admin/member |
-| `agent_questions` | Tenant | Agent questions and seller answers | Owner/admin/member |
+| `classifications` | Tenant | Every code suggested/confirmed/overridden/verified, per market; one current per product+market | Agent jobs and confirm/override functions (CD-032, CD-041) |
+| `agent_questions` | Tenant | Agent questions and seller answers | Agent jobs and answer function (CD-034) |
 | `agent_runs` | Tenant | Model, prompt version, tool calls, tokens, cost | Service role only |
 | `quotes`, `quote_lines` | Tenant | Saved landed-cost calculations | Owner/admin/member |
-| `alerts`, `alert_items` | Tenant | Tariff-change notices and affected SKUs | Owner/admin/member (created by jobs) |
-| `documents` | Tenant | Generated PDFs | Owner/admin/member |
-| `broker_orders` | Tenant | Paid verification requests | Owner/admin |
+| `alerts`, `alert_items` | Tenant | Tariff-change notices and affected SKUs | Jobs (CD-061) |
+| `documents` | Tenant | Generated PDFs | Server (CD-070/071) |
+| `broker_orders` | Tenant | Paid verification requests | Server after payment (CD-080) |
 | `subscriptions` | Tenant | Stripe billing state | Service role only (webhooks) |
-| `api_keys` | Tenant | Hashed API keys | Owner/admin |
-| `audit_log` | Tenant | Append-only decision record | Insert only |
+| `api_keys` | Tenant | Hashed API keys | Server (CD-114) |
+| `invitations` | Tenant | Pending invites: email, role, SHA-256 of the token, expiry (7 days) | `create_invitation` / `accept_invitation` / `revoke_invitation` only |
+| `audit_log` | Tenant | Append-only decision record | Database functions and triggers only |
 | `tariff_revisions`, `tariff_lines` | Shared | Each schedule release and its lines + embeddings | Service role |
 | `rulings`, `ruling_chunks` | Shared | CBP rulings and embedded chunks | Service role |
 | `tariff_measures` | Shared | Chapter 99 overlays by line, origin, mode, date | Platform admin |
@@ -59,6 +60,12 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - Trigger `products_outdated` — a changed `content_hash` on a confirmed product marks its classification `outdated`.
 - Constraint trigger `memberships_keep_owner` (`ensure_workspace_has_owner`) — deferred to commit; rejects any change that leaves an existing workspace with no owner. Account deletion (GDPR) must therefore delete the workspace or hand ownership over before deleting a sole owner's auth user.
 - Trigger `on_auth_user_created` (`handle_new_user`) — creates the `profiles` row for each new auth user; sign-up metadata cannot set `is_platform_admin`.
+
+- `create_workspace(name, home_country, business_type)` — creates the workspace with the caller as owner (max 20 owned per user) and audits it.
+- `create_invitation(workspace, email, role)` — owner/admin only; only owners invite owners; returns the plain token once and stores its SHA-256; replaces any open invite for that address.
+- `accept_invitation(token)` — the signed-in user's confirmed email must match; single use; adds the membership (keeps an existing role) and audits it.
+- `revoke_invitation(invitation)` and `workspace_members(workspace)` (members with emails, for members only).
+- Trigger `memberships_audit` — every membership insert, role change and removal is written to `audit_log` with the acting user. `quotes.created_by` is always set to the signed-in user.
 
 ## Tests
 

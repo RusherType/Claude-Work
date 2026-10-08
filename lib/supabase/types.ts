@@ -592,6 +592,57 @@ export type Database = {
           },
         ];
       };
+      invitations: {
+        Row: {
+          accepted_at: string | null;
+          accepted_by: string | null;
+          created_at: string;
+          email: string;
+          expires_at: string;
+          id: string;
+          invited_by: string | null;
+          revoked_at: string | null;
+          role: Database["public"]["Enums"]["member_role"];
+          token_hash: string;
+          workspace_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          accepted_at?: string | null;
+          accepted_by?: string | null;
+          created_at?: string;
+          email: string;
+          expires_at?: string;
+          id?: string;
+          invited_by?: string | null;
+          revoked_at?: string | null;
+          role: Database["public"]["Enums"]["member_role"];
+          token_hash: string;
+          workspace_id: string;
+        };
+        Update: {
+          accepted_at?: string | null;
+          accepted_by?: string | null;
+          created_at?: string;
+          email?: string;
+          expires_at?: string;
+          id?: string;
+          invited_by?: string | null;
+          revoked_at?: string | null;
+          role?: Database["public"]["Enums"]["member_role"];
+          token_hash?: string;
+          workspace_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "invitations_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       memberships: {
         Row: {
           role: Database["public"]["Enums"]["member_role"];
@@ -1118,6 +1169,7 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      accept_invitation: { Args: { p_token: string }; Returns: string };
       active_measures: {
         Args: {
           p_code: string;
@@ -1149,6 +1201,22 @@ export type Database = {
           isOneToOne: false;
           isSetofReturn: true;
         };
+      };
+      create_invitation: {
+        Args: {
+          p_email: string;
+          p_role: Database["public"]["Enums"]["member_role"];
+          p_workspace: string;
+        };
+        Returns: string;
+      };
+      create_workspace: {
+        Args: {
+          p_business_type?: string;
+          p_home_country: string;
+          p_name: string;
+        };
+        Returns: string;
       };
       current_revision: {
         Args: { m: Database["public"]["Enums"]["market_code"] };
@@ -1182,8 +1250,18 @@ export type Database = {
           similarity: number;
         }[];
       };
+      revoke_invitation: { Args: { p_invitation: string }; Returns: undefined };
       show_limit: { Args: Record<PropertyKey, never>; Returns: number };
       show_trgm: { Args: { "": string }; Returns: string[] };
+      workspace_members: {
+        Args: { p_workspace: string };
+        Returns: {
+          email: string;
+          full_name: string;
+          role: Database["public"]["Enums"]["member_role"];
+          user_id: string;
+        }[];
+      };
     };
     Enums: {
       class_source: "ai" | "override" | "broker";

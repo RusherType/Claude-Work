@@ -124,3 +124,19 @@ Playwright tests green. GitHub CI was stuck in "queued" from 15:12 to about 16:0
     `NEXT_PUBLIC_SITE_URL` (e.g. from `VERCEL_URL`) and add the preview domain to Supabase's
     redirect allow list, or magic-link sign-in fails there.
 - **Mutation testing:** 17 deliberately broken protections, each caught by the suite.
+
+## 2026-10-08
+
+**CD-004 (approved by owner, "go"):** migration `0002_workspaces.sql` closes direct client writes
+on every table whose rows come from server code (integrations, classifications, agent questions,
+alerts, documents, broker orders, API keys, audit log, new memberships) and adds `invitations`
+plus `create_workspace`, `create_invitation`, `accept_invitation`, `revoke_invitation`,
+`workspace_members` and a membership audit trigger. App: create-workspace empty state on `/app`,
+workspace switcher, Team page (members, role changes, remove/leave, invite with copyable link,
+pending invitations, revoke), `/invite/[token]` accept page. Invite emails arrive with Resend in
+Phase 4; until then the inviter copies the link (owner's decision).
+
+**Tests:** 22 live tests for the new functions (6 deliberately broken function rules each caught);
+isolation suite extended to `invitations` and the stricter insert matrix (194 tests); role helper,
+country and error-message unit tests; Playwright end-to-end flow (create, invite, accept in a
+second browser, reuse refused, role change, last owner cannot leave) runs in CI.

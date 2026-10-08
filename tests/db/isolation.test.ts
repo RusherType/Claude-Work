@@ -30,6 +30,7 @@ const user = {
   outsider: randomUUID(),
 };
 const CHILD_KEYS = [
+  "invitation",
   "classification",
   "question",
   "quoteLine",
@@ -110,6 +111,15 @@ const INSERT: Record<string, Insert> = {
     `insert into audit_log (workspace_id, actor_id, action) values ($1, $2, 'test')`,
     [w, actor],
   ],
+  invitations: (w, ids) => [
+    `insert into invitations (id, workspace_id, email, role, token_hash) values ($1, $2, $3, 'member', $4)`,
+    [
+      ids.invitation,
+      w,
+      `inv-${ids.invitation}@test.local`,
+      `hash-${ids.invitation}`,
+    ],
+  ],
 };
 const TENANT_TABLES = Object.keys(INSERT);
 
@@ -130,6 +140,7 @@ const OWN_ID: Record<string, string[]> = {
   subscriptions: [],
   api_keys: ["apiKey"],
   audit_log: [],
+  invitations: ["invitation"],
 };
 
 // A change to data in every row, used to prove a write could not reach the other workspace.
@@ -149,6 +160,7 @@ const UPDATE_SET: Record<string, string> = {
   subscriptions: "status = 'x'",
   api_keys: "name = 'x'",
   audit_log: "action = 'x'",
+  invitations: "role = 'viewer'",
 };
 
 // Who may insert into which table (docs/03-security.md). Everything else must be rejected.
@@ -160,20 +172,23 @@ const ROLE_USERS = {
 } as const;
 const MEMBERS_OF_A: string[] = Object.values(ROLE_USERS);
 const CATALOG = ["owner", "admin", "member"];
+// Direct client inserts. Since CD-004 everything else is written by server code: database
+// functions (memberships via invitations, audit rows) or the service role (jobs, webhooks).
 const MAY_INSERT: Record<string, string[]> = {
   products: CATALOG,
-  classifications: CATALOG,
-  agent_questions: CATALOG,
   quotes: CATALOG,
   quote_lines: CATALOG,
-  alerts: CATALOG,
-  alert_items: CATALOG,
-  documents: CATALOG,
-  integrations: ["owner", "admin"],
-  broker_orders: ["owner", "admin"],
-  api_keys: ["owner", "admin"],
-  memberships: ["owner", "admin"],
-  audit_log: ["owner", "admin", "member", "viewer"],
+  classifications: [], // agent jobs and the confirm/override function (CD-032, CD-041)
+  agent_questions: [], // agent jobs and the answer function (CD-034)
+  alerts: [], // change-monitor jobs (CD-061)
+  alert_items: [],
+  documents: [], // document generation (CD-070/071)
+  integrations: [], // Shopify OAuth callback (CD-020)
+  broker_orders: [], // after Stripe payment (CD-080)
+  api_keys: [], // server-generated keys (CD-114)
+  memberships: [], // create_workspace / accept_invitation only
+  audit_log: [], // database functions and triggers only
+  invitations: [], // create_invitation only
   agent_runs: [], // written by jobs with the service role
   subscriptions: [], // written by Stripe webhooks with the service role
 };
@@ -314,10 +329,10 @@ suite("tenant isolation (live database)", () => {
     await db.connect();
     await db.query("begin");
     for (const [name, uid] of Object.entries(user))
-      await db.query("insert into auth.users (id, email) values ($1, $2)", [
-        uid,
-        `${name}-${uid}@test.local`,
-      ]);
+      await db.query(
+        "insert into auth.users (id, email, email_confirmed_at) values ($1, $2, now())",
+        [uid, `${name}-${uid}@test.local`],
+      );
     await db.query(
       "insert into workspaces (id, name, home_country) values ($1, 'A', 'IN'), ($2, 'B', 'GB')",
       [ws.A, ws.B],
@@ -399,12 +414,15 @@ suite("tenant isolation (live database)", () => {
           async () => (await db.query(`select 1 from ${table}`)).rowCount,
         ),
       ).toBe(0);
-      expect(
-        await as(
-          null,
-          async () => (await db.query(`select 1 from ${table}`)).rowCount,
-        ),
-      ).toBe(0);
+      // anon sees no rows, or has no privilege on the table at all.
+      const anon = await as(null, async () => {
+        try {
+          return `rows:${(await db.query(`select 1 from ${table}`)).rowCount}`;
+        } catch (e) {
+          return `error:${(e as { code?: string }).code}`;
+        }
+      });
+      expect(["rows:0", "error:42501"]).toContain(anon);
     });
 
     it("cannot be changed or deleted in the other workspace", async () => {
@@ -562,8 +580,8 @@ suite("tenant isolation (live database)", () => {
     it("rejects re-pointing an existing row at the other workspace", async () => {
       const code = await errorCode(
         user.ownerA,
-        `update classifications set product_id = $1 where id = $2`,
-        [id.B.product, id.A.classification],
+        `update quote_lines set product_id = $1 where id = $2`,
+        [id.B.product, id.A.quoteLine],
       );
       expect(code).toBe("23503");
     });
@@ -701,14 +719,32 @@ suite("tenant isolation (live database)", () => {
   });
 
   describe("audit_log", () => {
-    it("records only the signed-in actor", async () => {
+    it("cannot be written by clients at all, even for themselves", async () => {
       const sql = `insert into audit_log (workspace_id, actor_id, action) values ($1, $2, 'x')`;
-      expect(await errorCode(user.viewerA, sql, [ws.A, user.ownerA])).toBe(
-        "42501",
-      );
-      expect(
-        await errorCode(user.viewerA, sql, [ws.A, user.viewerA]),
-      ).toBeNull();
+      for (const uid of [user.ownerA, user.viewerA])
+        expect(await errorCode(uid, sql, [ws.A, uid])).toBe("42501");
+    });
+
+    it("records membership changes with the signed-in actor", async () => {
+      const entry = await as(user.ownerA, async () => {
+        await db.query(
+          `update memberships set role = 'viewer' where workspace_id = $1 and user_id = $2`,
+          [ws.A, user.memberA],
+        );
+        await db.query("reset role");
+        const { rows } = await db.query(
+          `select actor_id::text, action, entity_id::text, data from audit_log
+           where workspace_id = $1 and action = 'membership.update' order by id desc limit 1`,
+          [ws.A],
+        );
+        return rows[0];
+      });
+      expect(entry).toMatchObject({
+        actor_id: user.ownerA,
+        action: "membership.update",
+        entity_id: user.memberA,
+        data: { old_role: "member", new_role: "viewer" },
+      });
     });
 
     it("cannot be changed or deleted, even by the owner", async () => {
@@ -752,21 +788,17 @@ suite("tenant isolation (live database)", () => {
       expect(after).toBe(before);
     });
 
-    it("an admin cannot add an owner but can add a member", async () => {
+    it("nobody adds members directly; invitations are the only way in", async () => {
       const sql = `insert into memberships (workspace_id, user_id, role) values ($1, $2, $3)`;
+      for (const uid of [user.ownerA, user.adminA])
+        for (const role of ["owner", "member"])
+          expect(await errorCode(uid, sql, [ws.A, user.outsider, role])).toBe(
+            "42501",
+          );
+      // Adding yourself to someone else's workspace is refused too.
       expect(
-        await errorCode(user.adminA, sql, [ws.A, user.outsider, "owner"]),
+        await errorCode(user.outsider, sql, [ws.A, user.outsider, "member"]),
       ).toBe("42501");
-      expect(
-        await errorCode(user.adminA, sql, [ws.A, user.outsider, "member"]),
-      ).toBeNull();
-    });
-
-    it("an owner can add another owner", async () => {
-      const sql = `insert into memberships (workspace_id, user_id, role) values ($1, $2, 'owner')`;
-      expect(
-        await errorCode(user.ownerA, sql, [ws.A, user.outsider]),
-      ).toBeNull();
     });
 
     it.each([

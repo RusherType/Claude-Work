@@ -1,9 +1,8 @@
-import { expect, test, type APIRequestContext } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { hasSupabase, latestLinkFor } from "./helpers";
 
 // CD-003. The redirect tests run anywhere; the magic-link flow needs a local Supabase and its
 // test mailbox (CI sets NEXT_PUBLIC_SUPABASE_URL and MAILPIT_URL after `supabase start`).
-const mailpit = process.env.MAILPIT_URL;
-const hasSupabase = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && mailpit);
 
 test("signed-out visitors to /app are sent to sign-in and come back after", async ({
   page,
@@ -31,35 +30,6 @@ test("the landing page links to sign-in", async ({ page }) => {
   await expect(page).toHaveURL(/\/sign-in$/);
 });
 
-async function latestLinkFor(
-  request: APIRequestContext,
-  email: string,
-): Promise<string> {
-  for (let i = 0; i < 30; i++) {
-    const search = await request.get(`${mailpit}/api/v1/search`, {
-      params: { query: `to:"${email}"` },
-    });
-    const { messages = [] } = (await search.json()) as {
-      messages?: { ID: string }[];
-    };
-    if (messages.length > 0) {
-      const msg = await (
-        await request.get(`${mailpit}/api/v1/message/${messages[0].ID}`)
-      ).json();
-      const body = `${msg.Text ?? ""}\n${msg.HTML ?? ""}`.replace(
-        /&amp;/g,
-        "&",
-      );
-      const link = body.match(
-        /https?:\/\/[^\s"'<>]+\/auth\/v1\/verify\?[^\s"'<>]+/,
-      );
-      if (link) return link[0];
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`No sign-in email for ${email}`);
-}
-
 test.describe("magic link", () => {
   test.skip(!hasSupabase, "needs a local Supabase (CI)");
 
@@ -78,7 +48,7 @@ test.describe("magic link", () => {
     await page.goto(await latestLinkFor(request, email));
     await expect(page).toHaveURL(/\/app$/);
     await expect(
-      page.getByRole("heading", { name: /you're signed in/i }),
+      page.getByRole("heading", { name: /create your workspace/i }),
     ).toBeVisible();
 
     // A signed-in visitor to /sign-in goes straight to the app.

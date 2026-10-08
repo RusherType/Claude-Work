@@ -1,12 +1,13 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
-import { isProtectedPath } from "@/lib/auth/redirect";
+import { isProtectedPath, safeNext } from "@/lib/auth/redirect";
 import { supabaseEnv } from "@/lib/env";
 import { AUTH_COOKIE_OPTIONS } from "./cookies";
 
 /**
  * Runs from proxy.ts on every page request: refreshes the Supabase session cookie, sends
- * signed-out visitors of /app to /sign-in, and sends signed-in visitors of /sign-in to /app.
+ * signed-out visitors of /app to /sign-in, and sends signed-in visitors of /sign-in on to their
+ * `next` page (default /app).
  * The /app layout checks the session again on the server, so this is not the only guard.
  */
 export async function updateSession(request: NextRequest) {
@@ -48,9 +49,11 @@ export async function updateSession(request: NextRequest) {
     return withCookies(NextResponse.redirect(url), response);
   }
   if (userId && pathname === "/sign-in") {
-    const url = request.nextUrl.clone();
-    url.pathname = "/app";
-    url.search = "";
+    // Already signed in: continue to the requested same-site page (e.g. an invitation).
+    const url = new URL(
+      safeNext(request.nextUrl.searchParams.get("next")),
+      request.url,
+    );
     return withCookies(NextResponse.redirect(url), response);
   }
   return response;
