@@ -62,7 +62,9 @@ test.describe("CSV import", () => {
 
     // Columns from a Shopify-style export are matched automatically.
     await upload(page, "products.csv", CSV);
-    await expect(page.getByLabel("SKU (required)")).toHaveValue("0");
+    await expect(
+      page.getByRole("combobox", { name: "SKU (required)" }),
+    ).toHaveValue("0");
     await expect(page.getByLabel("Country of origin")).toHaveValue("2");
     await page.getByRole("button", { name: "Check rows" }).click();
 

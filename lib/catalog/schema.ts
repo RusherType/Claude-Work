@@ -4,6 +4,7 @@
  */
 import { z } from "zod";
 import { isCountryCode } from "@/lib/countries";
+import { isCurrencyCode } from "./currencies";
 
 export const MAX_ROWS = 5000;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
@@ -12,21 +13,7 @@ export const BATCH_SIZE = 500;
 /** Control characters other than tab and line breaks; Postgres rejects NUL outright. */
 const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
 
-const FALLBACK_CURRENCIES =
-  "USD EUR GBP CAD AUD CNY JPY INR KRW MXN HKD SGD TWD VND THB CHF SEK NOK DKK PLN NZD BRL TRY ZAR AED".split(
-    " ",
-  );
-const CURRENCIES: ReadonlySet<string> = new Set(
-  typeof Intl.supportedValuesOf === "function"
-    ? Intl.supportedValuesOf("currency")
-    : FALLBACK_CURRENCIES,
-);
-
-/** ISO 4217 code, e.g. "USD". */
-export const isCurrencyCode = (value: unknown): value is string =>
-  typeof value === "string" &&
-  /^[A-Z]{3}$/.test(value) &&
-  CURRENCIES.has(value);
+export { isCurrencyCode } from "./currencies";
 
 const text = (max: number) =>
   z

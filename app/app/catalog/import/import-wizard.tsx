@@ -108,7 +108,10 @@ export function ImportWizard({ workspaceId }: { workspaceId: string }) {
     !state.progress.error;
   useEffect(() => {
     if (!importing) return;
-    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ""; // older Safari
+    };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [importing]);

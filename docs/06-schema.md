@@ -96,10 +96,15 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   - **Upsert:** upserts manual products by SKU. Manual means no integration and no external id; the unique index `products_manual_sku_key` covers these, so deleting an integration never collides with them.
   - **Blanks and currency:** blank fields never overwrite stored values. A customs value always comes with its currency, and neither is stored without the other.
   - **Returns:** `inserted`, `updated`, `unchanged`.
-- Product value checks, the same limits as the import's Zod schema, so the Data API cannot skip them:
-  - title 1–500 non-blank characters, SKU up to 100, description up to 20,000, vendor and product type up to 200;
-  - ISO country and currency formats, and value and weight non-negative and not NaN;
-  - at most 250 tags of up to 100 characters, and at most 250 https image links of up to 2,000 characters (`all_match`).
+- Product value checks, the same limits as the import's Zod schema, so the Data API cannot skip
+  them:
+  - title 1–500 characters and not blank, SKU up to 100, description up to 20,000, vendor and
+    product type up to 200, with no control characters (`is_clean_text`, `is_not_blank`);
+  - ISO country and currency formats; value and weight non-negative and not NaN; a value always
+    has a currency;
+  - at most 250 tags of up to 100 characters, and at most 250 https image links of up to 2,000
+    characters, with no empty elements (`all_match`);
+  - `facts` is a JSON object of at most 64 KB.
 
 ## Tests
 

@@ -79,27 +79,54 @@ create unique index products_manual_sku_key on products (workspace_id, sku)
 
 -- ============ 4. value checks ============
 -- The same limits as the import's Zod schema, so writes through the Data API cannot skip them.
+-- Text a person typed: no control characters (tab and line breaks aside).
+create or replace function is_clean_text(p_value text) returns boolean
+language sql immutable set search_path = '' as $$
+  select p_value is null or p_value !~ '[\x01-\x08\x0b\x0c\x0e-\x1f\x7f]';
+$$;
+
+-- Has something other than whitespace (including no-break and other Unicode spaces).
+create or replace function is_not_blank(p_value text) returns boolean
+language sql immutable set search_path = '' as $$
+  select p_value ~ '[^[:space:][:cntrl:]  -​　﻿]';
+$$;
+
+-- Every element is present, matches the pattern and is at most p_max_length characters.
 create or replace function all_match(p_values text[], p_pattern text, p_max_length integer)
 returns boolean
 language sql immutable set search_path = '' as $$
-  select coalesce(bool_and(v ~ p_pattern and char_length(v) <= p_max_length), true)
+  select coalesce(bool_and(coalesce(
+    v ~ p_pattern and char_length(v) <= p_max_length
+      and public.is_clean_text(v) and public.is_not_blank(v),
+    false)), true)
   from unnest(p_values) v;
 $$;
 
 alter table products
-  add constraint products_title_length check (char_length(title) between 1 and 500 and btrim(title) <> ''),
-  add constraint products_sku_length check (sku is null or (char_length(sku) between 1 and 100 and btrim(sku) <> '')),
-  add constraint products_description_length check (char_length(description) <= 20000),
-  add constraint products_product_type_length check (char_length(product_type) <= 200),
-  add constraint products_vendor_length check (char_length(vendor) <= 200),
+  add constraint products_title_valid check (
+    char_length(title) between 1 and 500 and is_not_blank(title) and is_clean_text(title)),
+  add constraint products_sku_valid check (
+    sku is null or (char_length(sku) between 1 and 100 and is_not_blank(sku) and is_clean_text(sku))),
+  add constraint products_description_valid check (
+    char_length(description) <= 20000 and is_clean_text(description)),
+  add constraint products_product_type_valid check (
+    char_length(product_type) <= 200 and is_clean_text(product_type)),
+  add constraint products_vendor_valid check (
+    char_length(vendor) <= 200 and is_clean_text(vendor)),
   add constraint products_origin_format check (origin_country ~ '^[A-Z]{2}$'),
   add constraint products_currency_format check (currency ~ '^[A-Z]{3}$'),
   add constraint products_value_valid check (customs_value >= 0 and customs_value <> 'NaN'),
+  -- A stored value always has its currency.
+  add constraint products_value_has_currency check (customs_value is null or currency is not null),
   add constraint products_weight_valid check (weight_kg >= 0 and weight_kg <> 'NaN'),
   add constraint products_tags_valid check (
-    cardinality(tags) <= 250 and all_match(tags, '\S', 100)),
+    cardinality(tags) <= 250 and all_match(tags, '.', 100)),
   add constraint products_images_valid check (
-    cardinality(image_urls) <= 250 and all_match(image_urls, '^https://\S+$', 2000));
+    cardinality(image_urls) <= 250
+    and all_match(image_urls, '^https://[^[:space:][:cntrl:]  -​　﻿]+$', 2000)),
+  -- Facts are extracted by the agent (CD-030); keep them an object of reasonable size.
+  add constraint products_facts_valid check (
+    facts is null or (jsonb_typeof(facts) = 'object' and pg_column_size(facts) <= 65536));
 
 -- ============ 3. import ============
 -- Runs as the caller, so the products policies decide what it may write. Blank fields

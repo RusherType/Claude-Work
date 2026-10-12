@@ -233,3 +233,21 @@ value or currency, or weight now mark a confirmed code Outdated. Some HTS lines 
 ("valued over $2.50/pair") or weight, and the agent reads images. This reverses my first design
 (only text changes), so the DB test now asserts the stricter behaviour. Vendor and origin still
 don't trigger a re-check. Say if you prefer fewer re-checks.
+
+**CD-022 round 2:**
+- The re-audit passed. Its low findings are fixed: null list elements, control characters and
+  Unicode spaces are rejected in the database too, a value requires a currency at table level,
+  and `facts` is capped at 64 KB.
+- The reviewer's Shopify findings are fixed:
+  - a variant without a SKU is reported, never dropped as an "image row";
+  - every variant gets its own image first, then the product's other images;
+  - re-imported downloads keep their titles.
+- One static ISO 4217 list is shared by browser and server.
+
+**Follow-ups:**
+- **CD-021:** truncate Shopify descriptions over 20,000 characters.
+- **CD-030/CD-032:** product text goes in `<product_data>` tags, and image URLs are fetched only
+  through an SSRF-safe path (no private or link-local addresses after DNS resolution, no
+  redirects to them) or passed to the Claude API as URLs.
+- **CD-091:** enforce the SKU cap in the database.
+- **CD-104:** rate-limit the import action.

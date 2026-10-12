@@ -7,14 +7,10 @@ import {
   type Field,
   type Mapping,
 } from "@/lib/catalog/import";
+import { CURRENCY_CODES } from "@/lib/catalog/currencies";
 import { field, primary, secondary } from "@/lib/ui/styles";
 import type { FileData } from "./import-wizard";
 import { StepHeading } from "./step-heading";
-
-const CURRENCIES: string[] =
-  typeof Intl.supportedValuesOf === "function"
-    ? Intl.supportedValuesOf("currency")
-    : ["USD", "EUR", "GBP", "CAD", "AUD", "CNY", "JPY", "INR"];
 
 export function MappingStep({
   file,
@@ -130,7 +126,7 @@ export function MappingStep({
           aria-describedby="file-currency-help"
           className={`${field} w-32`}
         >
-          {CURRENCIES.map((c) => (
+          {CURRENCY_CODES.map((c) => (
             <option key={c} value={c}>
               {c}
             </option>

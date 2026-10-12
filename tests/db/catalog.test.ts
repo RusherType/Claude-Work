@@ -249,8 +249,8 @@ describeDb("catalog import (live database)", () => {
       tryAs(
         db,
         user.member,
-        `insert into products (workspace_id, title, vendor, product_type, tags, image_urls, customs_value, weight_kg)
-         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        `insert into products (workspace_id, title, vendor, product_type, tags, image_urls, customs_value, weight_kg, currency, facts)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           ws,
           values.title ?? "Direct",
@@ -260,9 +260,14 @@ describeDb("catalog import (live database)", () => {
           values.image_urls ?? [],
           values.customs_value ?? null,
           values.weight_kg ?? null,
+          values.currency === undefined ? "USD" : values.currency,
+          JSON.stringify(values.facts === undefined ? {} : values.facts),
         ],
       );
     expect(await insert({})).toBeNull();
+    expect(
+      await insert({ customs_value: "5", facts: { material: "cotton" } }),
+    ).toBeNull();
     for (const bad of [
       { title: "   " },
       { vendor: "v".repeat(201) },
@@ -274,6 +279,17 @@ describeDb("catalog import (live database)", () => {
       { image_urls: ["data:text/html,<script>1</script>"] },
       { image_urls: [`https://img.test/${"a".repeat(2000)}`] },
       { customs_value: "NaN" },
+      { title: "\u00a0" },
+      { title: "a\u0001b" },
+      { vendor: "a\u001fb" },
+      { tags: [null] },
+      { tags: ["ok", null] },
+      { image_urls: [null] },
+      { image_urls: ["https://img.test/a\u0001b"] },
+      { image_urls: ["https://img.test/a\u00a0b"] },
+      { customs_value: "5", currency: null },
+      { facts: ["not", "an", "object"] },
+      { facts: { blob: "x".repeat(70000) } },
       { weight_kg: "NaN" },
     ]) {
       expect((await insert(bad))?.code, JSON.stringify(bad).slice(0, 80)).toBe(

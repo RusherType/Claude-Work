@@ -272,24 +272,33 @@ describe("checkRows", () => {
 });
 
 describe("Shopify product export", () => {
-  // One product with two variants and an extra image, then a product with a single variant.
+  // A product with three variants (one without a SKU) and an extra image; a single-variant product
+  // with three images; a product without a SKU.
+  const HEADER =
+    "Handle,Title,Body (HTML),Vendor,Type,Tags,Option1 Value,Variant SKU,Image Src,Cost per item";
   const csv = [
-    "Handle,Title,Body (HTML),Vendor,Type,Tags,Option1 Value,Variant SKU,Image Src,Cost per item",
+    HEADER,
     'crew-tee,Crew T-shirt,100% cotton,Acme,T-shirts,"cotton, menswear",M,TEE-M,https://cdn.test/tee-1.jpg,4.20',
     ",,,,,,,,,",
     "crew-tee,,,,,,L,TEE-L,,4.40",
+    "crew-tee,,,,,,XL,,,4.60",
     "crew-tee,,,,,,,,https://cdn.test/tee-2.jpg,",
-    "mug,Ceramic mug,Stoneware mug,Acme,Mugs,,Default Title,MUG-1,https://cdn.test/mug.jpg,2.10",
+    "mug,Ceramic mug,Stoneware mug,Acme,Mugs,,Default Title,MUG-1,https://cdn.test/mug-1.jpg,2.10",
+    "mug,,,,,,,,https://cdn.test/mug-2.jpg,",
+    "mug,,,,,,,,https://cdn.test/mug-3.jpg,",
     "no-sku,Mystery,,,,,Default Title,,,",
   ].join("\n");
 
-  const run = () => {
-    const [header, ...rows] = parseCsvRows(csv);
+  const run = (text = csv) => {
+    const [header, ...rows] = parseCsvRows(text);
     const mapping = guessMapping(header.cells);
-    return checkRows(rows, mapping, {
-      currency: "USD",
-      shopify: shopifyColumns(header.cells),
-    });
+    return {
+      headers: header.cells,
+      ...checkRows(rows, mapping, {
+        currency: "USD",
+        shopify: shopifyColumns(header.cells),
+      }),
+    };
   };
 
   it("turns each variant into a product with the product's details", () => {
@@ -306,19 +315,53 @@ describe("Shopify product export", () => {
       product_type: "T-shirts",
       tags: ["cotton", "menswear"],
       customs_value: "4.40",
-      // No image of its own: it gets every image of the product.
-      image_urls: ["https://cdn.test/tee-1.jpg", "https://cdn.test/tee-2.jpg"],
     });
-    expect(ok[0].image_urls).toEqual(["https://cdn.test/tee-1.jpg"]);
   });
 
-  it("merges image-only rows, ignores blank rows, and reports products without a SKU", () => {
+  it("gives every variant its own image first, then the product's other images", () => {
+    const ok = run()
+      .checked.filter((c) => c.row)
+      .map((c) => c.row!);
+    expect(ok[0].image_urls).toEqual([
+      "https://cdn.test/tee-1.jpg",
+      "https://cdn.test/tee-2.jpg",
+    ]);
+    expect(ok[1].image_urls).toEqual([
+      "https://cdn.test/tee-1.jpg",
+      "https://cdn.test/tee-2.jpg",
+    ]);
+    expect(ok[2].image_urls).toEqual([
+      "https://cdn.test/mug-1.jpg",
+      "https://cdn.test/mug-2.jpg",
+      "https://cdn.test/mug-3.jpg",
+    ]);
+  });
+
+  it("merges image-only rows and reports variants and products without a SKU", () => {
     const { checked, merged, blank } = run();
-    expect(merged).toBe(1);
+    expect(merged).toBe(3);
     expect(blank).toBe(1);
     const failed = checked.filter((c) => !c.row);
-    expect(failed.map((c) => c.line)).toEqual([7]);
-    expect(failed[0].errors[0].message).toBe("SKU: required");
+    expect(failed.map((c) => c.line)).toEqual([5, 10]);
+    expect(failed.map((c) => c.errors[0].message)).toEqual([
+      "SKU: required",
+      "SKU: required",
+    ]);
+  });
+
+  it("re-imports its own downloads without changing titles", () => {
+    const first = run();
+    const again = run(rowsCsv(first.headers, first.checked));
+    expect(again.checked.map((c) => c.row?.title ?? null)).toEqual(
+      first.checked.map((c) => c.row?.title ?? null),
+    );
+    const fixFile = run(
+      problemsCsv(
+        first.headers,
+        first.checked.filter((c) => !c.row),
+      ),
+    );
+    expect(fixFile.checked[0].cells[1]).toBe("Crew T-shirt (XL)");
   });
 });
 

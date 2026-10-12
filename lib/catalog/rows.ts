@@ -222,6 +222,18 @@ function groupShopify(
     else groups.set(handle, [r]);
   }
 
+  const options = (r: CsvRow) =>
+    shopify.options
+      .map((i) => cell(r, i))
+      .filter((v) => v && v !== "Default Title");
+  // Only a row with nothing but an image is an image row; a variant without a SKU stays and is
+  // reported, never dropped.
+  const imageOnly = (r: CsvRow) =>
+    !cell(r, mapping.sku) &&
+    !cell(r, mapping.title) &&
+    options(r).length === 0 &&
+    cell(r, mapping.image_urls) !== "";
+
   let merged = 0;
   const out: CsvRow[] = [];
   for (const r of rows) {
@@ -230,9 +242,8 @@ function groupShopify(
       out.push(r);
       continue;
     }
-    const hasSku = group.some((g) => cell(g, mapping.sku) !== "");
-    if (!cell(r, mapping.sku) && hasSku) {
-      merged++; // an image-only row: its image is added to the product below
+    if (imageOnly(r) && group.some((g) => !imageOnly(g))) {
+      merged++; // its image is added to the product's variants below
       continue;
     }
     const first = group[0];
@@ -241,20 +252,26 @@ function groupShopify(
       const i = mapping[field];
       if (i !== undefined && !cell(r, i)) cells[i] = first.cells[i] ?? "";
     }
+    // "Tee" + options M -> "Tee (M)", unless the title already says so (a re-imported download).
     const titleIndex = mapping.title;
-    const options = shopify.options
-      .map((i) => cell(r, i))
-      .filter((v) => v && v !== "Default Title");
-    if (titleIndex !== undefined && options.length > 0 && cells[titleIndex]) {
-      cells[titleIndex] =
-        `${cells[titleIndex].trim()} (${options.join(" / ")})`;
+    const opts = options(r);
+    if (titleIndex !== undefined && opts.length > 0 && cells[titleIndex]) {
+      const suffix = ` (${opts.join(" / ")})`;
+      const title = cells[titleIndex].trim();
+      cells[titleIndex] = title.endsWith(suffix) ? title : title + suffix;
     }
+    // The row's own image first, then the product's other images.
     const imageIndex = mapping.image_urls;
-    if (imageIndex !== undefined && !cell(r, imageIndex)) {
-      const images = [
-        ...new Set(group.map((g) => cell(g, imageIndex)).filter(Boolean)),
-      ];
-      cells[imageIndex] = images.slice(0, 20).join(" ");
+    if (imageIndex !== undefined) {
+      const own = cell(r, imageIndex)
+        .split(/[\s,|]+/)
+        .filter(Boolean);
+      const all = group.flatMap((g) =>
+        cell(g, imageIndex)
+          .split(/[\s,|]+/)
+          .filter(Boolean),
+      );
+      cells[imageIndex] = [...new Set([...own, ...all])].slice(0, 20).join(" ");
     }
     out.push({ line: r.line, cells });
   }

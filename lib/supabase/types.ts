@@ -1241,7 +1241,9 @@ export type Database = {
           updated: number;
         }[];
       };
+      is_clean_text: { Args: { p_value: string }; Returns: boolean };
       is_member: { Args: { ws: string }; Returns: boolean };
+      is_not_blank: { Args: { p_value: string }; Returns: boolean };
       is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       match_rulings: {
         Args: { hts_prefix?: string; k?: number; query_embedding: string };

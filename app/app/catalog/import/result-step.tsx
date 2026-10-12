@@ -25,6 +25,11 @@ export function ResultStep({
   const percent = total === 0 ? 100 : Math.round((done / total) * 100);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
+  // The Retry button disappears while sending; keep focus on the heading, not <body>.
+  const retry = () => {
+    heading.current?.focus();
+    onRetry();
+  };
 
   return (
     <div className="border-border bg-surface flex flex-col gap-4 rounded-lg border p-6">
@@ -90,7 +95,7 @@ export function ResultStep({
           </p>
           <div className="flex flex-wrap gap-3">
             {error.retryable && (
-              <button type="button" onClick={onRetry} className={primary}>
+              <button type="button" onClick={retry} className={primary}>
                 Retry the remaining {(total - done).toLocaleString()}
               </button>
             )}
