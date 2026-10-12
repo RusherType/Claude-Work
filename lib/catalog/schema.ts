@@ -10,8 +10,16 @@ export const MAX_ROWS = 5000;
 export const MAX_FILE_BYTES = 10 * 1024 * 1024;
 export const BATCH_SIZE = 500;
 
-/** Control characters other than tab and line breaks; Postgres rejects NUL outright. */
-const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/;
+/**
+ * Control characters (C0 other than tab and line breaks, DEL, and C1 such as U+0085). Postgres
+ * rejects NUL outright; the database checks reject the rest (0003_catalog.sql).
+ */
+const CONTROL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
+/** What the database's is_not_blank counts as blank, beyond JavaScript's \s. */
+const BLANK = /[\s\u0085\u00a0\u2000-\u200b\u3000\ufeff]/g;
+const isNotBlank = (s: string) => s.replace(BLANK, "") !== "";
+/** Characters never allowed in an image link (spaces of any kind and controls). */
+const URL_BAD = /[\s\u0000-\u001f\u007f-\u009f\u00a0\u2000-\u200b\u3000\ufeff]/;
 
 export { isCurrencyCode } from "./currencies";
 
@@ -21,7 +29,8 @@ const text = (max: number) =>
     .trim()
     .min(1)
     .max(max)
-    .refine((s) => !CONTROL.test(s), "contains control characters");
+    .refine((s) => !CONTROL.test(s), "contains control characters")
+    .refine(isNotBlank, "is blank");
 
 /** Plain decimal with at most `intDigits` before the point (matches the numeric column). */
 export const decimalPattern = (intDigits: number, places: number) =>
@@ -43,7 +52,7 @@ export const productRowSchema = z
         z
           .url({ protocol: /^https$/ })
           .max(2000)
-          .refine((s) => !/\s/.test(s)),
+          .refine((s) => !URL_BAD.test(s)),
       )
       .max(20),
     origin_country: z

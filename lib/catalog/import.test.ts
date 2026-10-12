@@ -228,6 +228,32 @@ describe("checkRow", () => {
   });
 });
 
+describe("checkRow agrees with the database on blank and control characters", () => {
+  const check = (over: Parameters<typeof cells>[0]) =>
+    checkRow(cells({ sku: "S", title: "T", ...over }), ALL, 2, USD).errors.map(
+      (e) => e.message,
+    );
+
+  it.each([
+    ["zero-width space title", { title: "\u200b" }, "Title: is blank"],
+    ["no-break space title", { title: "\u00a0" }, "Title: required"],
+    ["next-line SKU", { sku: "S\u0085" }, "SKU: contains control characters"],
+    ["zero-width tag", { tags: "ok, \u200b" }, "Tags: a tag is blank"],
+    [
+      "zero-width space in an image link",
+      { image_urls: "https://img.test/a\u200bb.jpg" },
+      "Image URLs: each image must be an https link (at most 20)",
+    ],
+    [
+      "C1 control in an image link",
+      { image_urls: "https://img.test/a\u0085b.jpg" },
+      "Image URLs: each image must be an https link (at most 20)",
+    ],
+  ])("reports a %s on its own row", (_name, over, message) => {
+    expect(check(over)).toEqual([message]);
+  });
+});
+
 describe("checkRows", () => {
   it("flags repeated SKUs with the line of the first one", () => {
     const { checked } = checkRows(

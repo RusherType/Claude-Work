@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Client } from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { productRowSchema } from "@/lib/catalog/schema";
 import { asUser, connect, describeDb, signInAs, tryAs } from "./helpers";
 
 // CD-022: import_products, the database-computed content hash, unique SKUs and product checks,
@@ -296,6 +297,53 @@ describeDb("catalog import (live database)", () => {
         "23514",
       );
     }
+  });
+
+  it("accepts every row the shared Zod schema accepts (no drift between the two)", async () => {
+    const edges = [
+      "\u200b",
+      "\u00a0",
+      "\u0085",
+      "\u3000",
+      "\ufeff",
+      "\u2007",
+      "\t",
+      "\n",
+      "\u0001",
+      "\u007f",
+      "a\u200bb",
+      "a\u00a0b",
+      "a\u0085b",
+      "a\tb",
+      "a\nb",
+      "é™½",
+      "😀",
+    ];
+    const candidates: Row[] = [];
+    for (const [i, e] of edges.entries()) {
+      candidates.push(
+        row(`EDGE-T${i}`, { title: e }),
+        row(`EDGE-S${i}${e}`),
+        row(`EDGE-D${i}`, { description: e, vendor: e, product_type: e }),
+        row(`EDGE-G${i}`, { tags: [e] }),
+        row(`EDGE-I${i}`, { image_urls: [`https://img.test/${e}.jpg`] }),
+      );
+    }
+    let accepted = 0;
+    for (const candidate of candidates) {
+      // The action sends Zod's output (z.url() normalises links, e.g. drops tabs).
+      const parsed = productRowSchema.safeParse(candidate);
+      if (!parsed.success) continue;
+      accepted++;
+      const err = await tryAs(
+        db,
+        user.member,
+        "select * from import_products($1, $2::jsonb)",
+        [ws, JSON.stringify([parsed.data])],
+      );
+      expect(err, JSON.stringify(parsed.data)).toBeNull();
+    }
+    expect(accepted).toBeGreaterThan(20);
   });
 
   it("refuses imports into a deleted workspace", async () => {

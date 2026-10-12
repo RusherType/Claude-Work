@@ -152,7 +152,12 @@ export function checkRow(
 }
 
 function issueMessage(field: Field, issue: z.core.$ZodIssue): string {
-  if (issue.message === "contains control characters") return issue.message;
+  if (
+    issue.message === "contains control characters" ||
+    issue.message === "is blank"
+  ) {
+    return field === "tags" ? `a tag ${issue.message}` : issue.message;
+  }
   if (field === "image_urls")
     return "each image must be an https link (at most 20)";
   if (field === "tags") return "at most 250 tags of up to 100 characters";
@@ -226,13 +231,10 @@ function groupShopify(
     shopify.options
       .map((i) => cell(r, i))
       .filter((v) => v && v !== "Default Title");
-  // Only a row with nothing but an image is an image row; a variant without a SKU stays and is
-  // reported, never dropped.
+  // A row with no SKU, title or options is an image row (its image, if any, joins the product).
+  // A variant without a SKU has options or a title, so it stays and is reported, never dropped.
   const imageOnly = (r: CsvRow) =>
-    !cell(r, mapping.sku) &&
-    !cell(r, mapping.title) &&
-    options(r).length === 0 &&
-    cell(r, mapping.image_urls) !== "";
+    !cell(r, mapping.sku) && !cell(r, mapping.title) && options(r).length === 0;
 
   let merged = 0;
   const out: CsvRow[] = [];
