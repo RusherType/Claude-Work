@@ -160,3 +160,32 @@ membership locked FOR SHARE, verified with two concurrent sessions).
 **Phase 1 status:** done CD-001, CD-004, CD-005, CD-011. Done but waiting on the owner: CD-002
 (staging apply), CD-003 (Google OAuth client), CD-006 (Vercel account). Blocked on network access
 and accounts: CD-007 (Sentry, PostHog, Langfuse), CD-010 (hts.usitc.gov), CD-012 (Voyage).
+
+## 2026-10-12
+
+**CD-050 (cost engine) ticked:** `lib/tariff/landed-cost/` is a pure function using exact
+decimals (`decimal.js` added). Rules are in `docs/02-architecture.md`. Tests:
+- the 46 hand-worked cases, written first;
+- 33 rule tests, including program eligibility (`A+`, `A*`, bilateral agreements), MPF and overlay
+  exemptions, data problems going to review, and invalid input;
+- 23 money-helper tests;
+- 13 deliberate rule breaks, each caught.
+
+The reviewer approved after three rounds. The first round found guesses that returned "ok":
+- unchecked program eligibility;
+- MPF charged on FTA goods;
+- no overlay exemption for USMCA goods;
+- a missing code status treated as confirmed.
+
+All of them now go to review or are modelled as data. The second round found two more:
+- a claim the Special column doesn't list skipped the overlay and MPF exemptions;
+- an exemption for `S+` also matched a plain `S` claim.
+
+Both are fixed and tested.
+
+**Follow-ups:**
+- CD-014/CD-015: the `special_programs` table and `tariff_measures.exempt_programs` (see
+  `docs/06-schema.md`). Until they exist, program claims go to review.
+- CD-014: store measure prefixes as digits only.
+- Phase 4 gate: compare against a real Form 7501 (per-line rounding; Section 232 metal-content
+  value is not modelled).

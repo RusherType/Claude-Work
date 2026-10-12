@@ -32,7 +32,7 @@
 | [ ] | CD-040 | Review | Review queue | One at a time; A, E, Q, J, K shortcuts; empty state | P0 | 2 | CD-033 |
 | [ ] | CD-041 | Review | Confirm and override | Confirm/override with reason; audit row; chips update everywhere | P0 | 1 | CD-040 |
 | [ ] | CD-042 | Review | Classification card | Breadcrumb, confidence, reasoning, alternatives, rulings drawer, history | P0 | 2 | CD-041 |
-| [ ] | CD-050 | Landed cost | Cost engine | Pure function; 40 hand-worked tests incl. overlays, specific rates, MPF min/max, postal vs commercial | P0 | 3 | CD-011, CD-015 |
+| [x] | CD-050 | Landed cost | Cost engine | Pure function; 40 hand-worked tests incl. overlays, specific rates, MPF min/max, postal vs commercial | P0 | 3 | CD-011, CD-015 |
 | [ ] | CD-051 | Landed cost | Calculator UI | Pick SKUs, origin, mode; breakdown; save quote; PDF | P0 | 2 | CD-050 |
 | [ ] | CD-052 | Landed cost | Order to quote | Shopify order → landed cost in one click | P0 | 1 | CD-051 |
 | [ ] | CD-060 | Monitor | Revision diff | Nightly job detects new USITC revision, imports, lists changed lines | P0 | 1.5 | CD-010 |

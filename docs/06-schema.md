@@ -39,6 +39,24 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - HTS codes stored as digits only (`6109100012`); formatted with dots in the UI.
 - `tariff_measures.origin_countries = '{**}'` means all origins.
 - Money is `numeric`, never float.
+- `fee_schedules.fee_type` is one of `mpf_formal`, `mpf_informal`, `hmf`, `carrier_brokerage`,
+  `informal_entry_limit`; the limit itself is stored in `flat_amount`. Every row has a `pct` or a
+  `flat_amount`.
+- Percentages are stored as percent: `fee_schedules.pct` 0.3464 means 0.3464%, and
+  `tariff_measures.rate_value` 25 means 25%. A `flat_per_item` measure stores US dollars per item.
+- `tariff_measures.hts_prefixes` and `excluded_prefixes` hold digits only, matching the start of
+  the 10-digit code.
+- **Planned for CD-014/CD-015 (not in the schema yet):** the landed-cost engine already takes
+  special-program eligibility and per-measure program exemptions; until the tables below exist,
+  CD-051 passes neither, so multilateral program claims (A, P, S, ...) go to review and lines
+  claiming a program that a measure covers go to review.
+  - `special_programs` (shared): `symbol` as written in the Special column (`A`, `A+`, `S`),
+    `countries char(2)[]`, `mpf_exempt boolean`, `effective_from`, `effective_to`, `source_url`
+    (HTSUS General Notes). Published by an admin like measures.
+  - `tariff_measures.exempt_programs text[]`: null means nobody has checked (lines claiming a
+    program go to review), `'{}'` means no program is exempt.
+- Code that reads numeric columns for the landed-cost engine selects them as text
+  (`rate_value::text`). PostgREST returns numeric as a JSON number, which the engine rejects.
 - Embeddings are 1024-dimension; change the column type if the chosen Voyage model differs.
 - Links between tenant rows use composite foreign keys on `(workspace_id, <parent>_id)` referencing
   `(workspace_id, id)`, so a row can only point at a parent in its own workspace (FK checks bypass

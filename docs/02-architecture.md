@@ -41,6 +41,72 @@ Shopify store --webhooks--> Next.js app on Vercel <--> Seller (browser / Shopify
 8. **Change monitor** — nightly: new revision or measure → affected confirmed SKUs → recompute → alerts → digest.
 9. **Documents service** — PDFs from confirmed data only.
 
+## Landed-cost engine rules
+
+`lib/tariff/landed-cost/` is a pure function of the lines, the shipment, and the measure, fee and
+program rows in force. It uses exact decimals (`decimal.js`), never floats, and is split by
+concern: `base-duty.ts`, `overlays.ts`, `fees.ts`, `validate.ts`, and `index.ts`, which puts them
+together.
+
+- **Customs value.** Each line's value × the shipment exchange rate, rounded half up to the cent.
+- **Base duty.**
+  - An origin in the Column 2 list pays the Column 2 rate.
+  - A claimed program pays the Special rate only when the program is listed for the line and the
+    origin qualifies:
+    - With a program row in force (from the HTSUS General Notes), the origin must be in its
+      country list. `A+` is its own row: least-developed beneficiaries only.
+    - Without a row, a two-letter symbol that is a country code (`AU`, `KR`, `JO`) counts as an
+      agreement with that country only.
+    - Any other symbol is refused, and so is anything marked `*`, whose per-line country
+      exclusions are not in our data.
+    - A refused claim pays the General rate and goes to review.
+  - A claimed program that isn't listed for the line pays the General rate, with a warning.
+- **Overlays.** Every measure passed in (the app passes published ones only) is added when all of
+  these hold:
+  - it is in force on the entry date (start and end dates inclusive) and covers the shipment mode;
+  - the code starts with one of its prefixes and none of its excluded prefixes;
+  - the origin is listed, or the measure lists `**`.
+
+  Overlays always stack. Measures that must not stack belong in the data, through end dates and
+  excluded prefixes. A line that qualifies for a program skips the measures whose `exemptPrograms`
+  list that program (for example, USMCA goods). A measure with no exemption data is charged, and
+  the line goes to review.
+- **Rounding.** Every component is rounded half up to the cent before it is added.
+- **Fees.**
+  - **Informal or formal.** A shipment is informal when its total value is at or under the
+    `informal_entry_limit` row's amount.
+  - **MPF.** Uses the formal or informal row. Lines that qualify for an MPF-exempt program are
+    left out of the fee's base. An entry with only exempt lines pays nothing, and a partly exempt
+    entry goes to review so the proration can be checked.
+  - **Other fees.** HMF applies to ocean only. A carrier fee is added when a row matches, and a
+    named carrier without a row gets a warning.
+  - **Choosing a row.** Among rows in force for the date, an exact-carrier row beats a mode row,
+    which beats a generic row; then the latest start date wins.
+  - **Amount.** `flat + pct% × value`, clamped to min and max.
+  - **Allocation.** Each fee is spread over the lines that pay it, by value, using largest
+    remainder, so the lines add up to the cent.
+- **Needs review, never a guess.** A line or quote goes to review in any of these cases:
+  - the rate is complex or missing, or a specific rate lacks its quantity;
+  - a Column 2 origin has no Column 2 rate;
+  - a program claim can't be checked;
+  - a measure is specific (no unit), or has no exemption data for a claimed program;
+  - the informal limit, MPF or HMF row is missing, or two equally specific fee rows apply;
+  - the MPF exemption is partial or unknown.
+
+  A suggested or unconfirmed code, and a rate basis such as "on drained weight", add a warning.
+- **Invalid input throws.** Each of these throws a named error instead of producing NaN or
+  skipping a row:
+  - malformed amounts, dates, quantities, exchange rates or HTS codes (10 digits required);
+  - unknown modes, fee types or rate types;
+  - fee rows without an amount.
+
+  Server actions validate with Zod before calling the engine.
+- **Known limits, to check against a real duty bill at the Phase 4 gate:**
+  - Form 7501 reports value in whole dollars and rounds per HTS line, so totals may drift by
+    cents.
+  - Section 232 derivative measures charged on metal content are not modelled; `ad_valorem`
+    measures use the full value.
+
 ## The classification agent
 
 Claude tool-use loop with a fixed step budget, inside an Inngest function, one product per run.
