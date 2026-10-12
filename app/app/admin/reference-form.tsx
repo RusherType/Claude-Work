@@ -27,15 +27,18 @@ export function ReferenceForm({
     idle,
   );
   const errors = state.status === "error" ? (state.errors ?? {}) : {};
+  // After a failed save, show what was submitted (React resets the form after an action).
+  const shown = state.status === "error" && state.values ? state.values : row;
 
   return (
     <form
+      key={state.status === "error" ? (state.attempt ?? 0) : 0}
       action={action}
       className="border-border bg-surface flex flex-col gap-4 rounded-lg border p-6"
       noValidate
     >
       {FORM_FIELDS[entity].map((f) => (
-        <Field key={f.name} f={f} row={row} error={errors[f.name]} />
+        <Field key={f.name} f={f} row={shown} error={errors[f.name]} />
       ))}
       {state.status === "error" && (
         <p role="alert" className="text-risk text-sm">
@@ -181,8 +184,8 @@ function ExemptField({
   row: Record<string, unknown> | null;
   error: React.ReactNode;
 }) {
-  const stored = row?.exempt_programs as string[] | null | undefined;
-  const [known, setKnown] = useState(Array.isArray(stored));
+  const stored = row?.exempt_programs as string[] | string | null | undefined;
+  const [known, setKnown] = useState(stored !== null && stored !== undefined);
   return (
     <fieldset className="flex flex-col gap-1.5">
       <legend className="text-sm font-medium">Exempt programs</legend>
@@ -203,7 +206,9 @@ function ExemptField({
           <input
             id="f-exempt_programs"
             name="exempt_programs"
-            defaultValue={(stored ?? []).join(" ")}
+            defaultValue={
+              Array.isArray(stored) ? stored.join(" ") : (stored ?? "")
+            }
             placeholder="S S+"
             className={`${field} max-w-xs font-mono`}
           />

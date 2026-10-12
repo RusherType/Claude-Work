@@ -20,7 +20,32 @@ import { createClient } from "@/lib/supabase/server";
 
 export type EditState =
   | { status: "idle" }
-  | { status: "error"; message: string; errors?: Record<string, string> };
+  | {
+      status: "error";
+      message: string;
+      errors?: Record<string, string>;
+      /** What was submitted, so the form can show it again (React resets forms after actions). */
+      values?: Record<string, unknown>;
+      /** Changes on every failed attempt, to remount the form with `values`. */
+      attempt?: number;
+    };
+
+/** The submitted form as a row-shaped object the form fields can display. */
+function submitted(form: FormData): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const key of new Set(form.keys())) {
+    if (key.startsWith("$ACTION")) continue;
+    const v = form.get(key);
+    if (typeof v === "string") out[key] = v;
+  }
+  out.applies_to_modes = form.getAll("applies_to_modes");
+  out.mpf_exempt = form.get("mpf_exempt") === "on";
+  out.exempt_programs =
+    form.get("exempt_known") === "on"
+      ? (form.get("exempt_programs") ?? "")
+      : null;
+  return out;
+}
 
 const target = z.object({ entity: z.enum(ENTITIES), id: z.uuid().nullable() });
 
@@ -48,21 +73,27 @@ export async function saveDraft(
   _prev: EditState,
   form: FormData,
 ): Promise<EditState> {
+  // Every failure keeps what was typed (React resets the form after an action).
+  const fail = (
+    message: string,
+    errors?: Record<string, string>,
+  ): EditState => ({
+    status: "error",
+    message,
+    errors,
+    values: submitted(form),
+    attempt: Date.now(),
+  });
   const t = target.safeParse({ entity, id });
-  if (!t.success) return { status: "error", message: "Unknown row." };
+  if (!t.success) return fail("Unknown row.");
   const parsed = SCHEMAS[t.data.entity].safeParse(
     formToInput(t.data.entity, form),
   );
   if (!parsed.success) {
-    return {
-      status: "error",
-      message: "Fix the highlighted fields.",
-      errors: fieldErrors(parsed.error),
-    };
+    return fail("Fix the highlighted fields.", fieldErrors(parsed.error));
   }
   const supabase = await client();
-  if (!supabase)
-    return { status: "error", message: dbMessage({ code: "42501" }) };
+  if (!supabase) return fail(dbMessage({ code: "42501" }));
 
   const table = TABLES[t.data.entity];
   const values = parsed.data as Record<string, unknown>;
@@ -77,15 +108,10 @@ export async function saveDraft(
         .from(table)
         .insert(values as never)
         .select("id");
-  if (result.error)
-    return { status: "error", message: dbMessage(result.error) };
+  if (result.error) return fail(dbMessage(result.error));
   const saved = result.data?.[0]?.id;
-  if (!saved) {
-    return {
-      status: "error",
-      message: "This row was published or removed meanwhile. Reload.",
-    };
-  }
+  if (!saved)
+    return fail("This row was published or removed meanwhile. Reload.");
   revalidatePath("/app/admin", "layout");
   redirect(`/app/admin/${t.data.entity}/${saved}`);
 }
