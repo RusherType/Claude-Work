@@ -49,7 +49,7 @@ Every row of customer data belongs to one workspace, and Postgres Row Level Secu
 - Zod validation at every server action and route handler.
 - Rate limits (Upstash Redis): 60 req/min per user; classification capped per plan.
 - Strict CSP, HSTS, `frame-ancestors` limited to Shopify admin for the embedded app.
-- CSV uploads: 10 MB, server-side parsing, formula-injection escaped on export.
+- CSV uploads: 10 MB and 5,000 rows, parsed in the browser; the server re-validates every row with Zod and writes through `import_products` (RLS applies); formula injection escaped on export.
 - Stripe webhooks signature-verified; billing state changes only from webhooks.
 - Dependabot and `pnpm audit` in CI; patch Next.js security releases within 48 hours.
 

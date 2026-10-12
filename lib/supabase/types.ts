@@ -1229,6 +1229,14 @@ export type Database = {
         };
         Returns: boolean;
       };
+      import_products: {
+        Args: { p_rows: Json; p_workspace_id: string };
+        Returns: {
+          inserted: number;
+          unchanged: number;
+          updated: number;
+        }[];
+      };
       is_member: { Args: { ws: string }; Returns: boolean };
       is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
       match_rulings: {
@@ -1249,6 +1257,16 @@ export type Database = {
           is_leaf: boolean;
           similarity: number;
         }[];
+      };
+      product_content_hash: {
+        Args: {
+          p_description: string;
+          p_facts: Json;
+          p_product_type: string;
+          p_tags: string[];
+          p_title: string;
+        };
+        Returns: string;
       };
       revoke_invitation: { Args: { p_invitation: string }; Returns: undefined };
       show_limit: { Args: Record<PropertyKey, never>; Returns: number };

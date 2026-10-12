@@ -35,15 +35,25 @@ export default async function AppHome() {
       </p>
       <h1 className="text-xl font-semibold">Welcome to {ctx.workspace.name}</h1>
       <p className="text-muted text-sm">
-        Next you&apos;ll connect your catalog. Meanwhile you can invite your
-        team.
+        Start by importing your products from a CSV file. You can also invite
+        your team.
       </p>
-      <Link
-        href="/app/settings/team"
-        className="text-brand text-sm font-medium underline"
-      >
-        Manage team
-      </Link>
+      <div className="flex flex-wrap items-center gap-4">
+        {ctx.workspace.role !== "viewer" && (
+          <Link
+            href="/app/catalog/import"
+            className="bg-brand dark:text-background rounded-md px-4 py-2 text-sm font-medium text-white"
+          >
+            Import products
+          </Link>
+        )}
+        <Link
+          href="/app/settings/team"
+          className="text-brand text-sm font-medium underline"
+        >
+          Manage team
+        </Link>
+      </div>
     </section>
   );
 }

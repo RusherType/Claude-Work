@@ -189,3 +189,18 @@ Both are fixed and tested.
 - CD-014: store measure prefixes as digits only.
 - Phase 4 gate: compare against a real Form 7501 (per-line rounding; Section 232 metal-content
   value is not modelled).
+
+**CD-022 (CSV import), plan recorded per the owner's standing approval:**
+- The file is read in the browser: an RFC 4180 parser, at most 5,000 rows and 10 MB.
+- Columns are matched automatically, including Shopify export headers, and can be changed.
+- Each row is checked with the same Zod schema the server uses, and errors are listed per row
+  (downloadable as CSV).
+- Valid rows go to a server action in batches of up to 500 rows and 700 KB. It re-validates and
+  calls `import_products`, a security-invoker function, so RLS applies.
+- Migration `0003_catalog.sql`:
+  - SKUs are unique per workspace for products without an integration, so a re-import updates
+    instead of duplicating;
+  - `content_hash` is now computed by the database, which closes a gap where a client could edit
+    a confirmed product, keep the old hash, and skip "outdated";
+  - products get value checks.
+- A required SKU is the owner-facing rule: rows without one are reported, not imported.

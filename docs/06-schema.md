@@ -81,7 +81,7 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - `current_revision(market)` — latest imported revision.
 - `match_tariff_lines(embedding, revision_id, k)` and `match_rulings(embedding, hts_prefix, k)` — vector search for agent tools (revoked rulings excluded; `k` is clamped to 1–50).
 - `active_measures(code, origin, mode, on_date)` — published overlays that apply.
-- Trigger `products_outdated` — a changed `content_hash` on a confirmed product marks its classification `outdated`.
+- `content_hash` is computed by the database (`product_content_hash`) from title, description, product type, tags and facts; a value sent by a client is never stored. Trigger `products_outdated` marks a confirmed or broker-verified code `outdated` when that hash changes (or when a client sends a different hash: a needless re-check at worst). Vendor, images, origin, value and weight do not mark codes outdated.
 - Constraint trigger `memberships_keep_owner` (`ensure_workspace_has_owner`) — deferred to commit; rejects any change that leaves an existing workspace with no owner. Account deletion (GDPR) must therefore delete the workspace or hand ownership over before deleting a sole owner's auth user.
 - Trigger `on_auth_user_created` (`handle_new_user`) — creates the `profiles` row for each new auth user; sign-up metadata cannot set `is_platform_admin`.
 
@@ -90,6 +90,8 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - `accept_invitation(token)` — the signed-in user's confirmed email must match; single use; the inviter must still hold the role needed to send it and the workspace must not be deleted; adds the membership (keeps an existing role) and audits it.
 - `revoke_invitation(invitation)` (admins cannot revoke owner invitations; audited only when something changed) and `workspace_members(workspace)` (members with emails, for members only).
 - Trigger `memberships_audit` — every membership insert, role change and removal is written to `audit_log` with the acting user. `quotes.created_by` is always set to the signed-in user.
+
+- `import_products(workspace, rows jsonb)` (CD-022) — security invoker, so RLS applies; owner, admin or member only; 1–1,000 rows with a SKU and title, no repeated SKU. Upserts products without an integration by SKU (unique index `products_manual_sku_key` on `(workspace_id, sku)` where `integration_id` is null); blank fields never overwrite stored values; returns `inserted`, `updated`, `unchanged`. Products have value checks: title 1–500 characters, SKU up to 100, description up to 65,535, ISO country and currency codes, non-negative value and weight, at most 250 tags and 250 images.
 
 ## Tests
 

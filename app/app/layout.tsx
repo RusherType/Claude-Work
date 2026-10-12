@@ -39,9 +39,14 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
             </form>
           )}
           {ctx.workspace && (
-            <Link href="/app/settings/team" className="text-sm">
-              Team
-            </Link>
+            <>
+              <Link href="/app/catalog/import" className="text-sm">
+                Import products
+              </Link>
+              <Link href="/app/settings/team" className="text-sm">
+                Team
+              </Link>
+            </>
           )}
         </div>
         <div className="flex items-center gap-3 text-sm">
