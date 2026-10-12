@@ -251,3 +251,10 @@ don't trigger a re-check. Say if you prefer fewer re-checks.
   redirects to them) or passed to the Claude API as URLs.
 - **CD-091:** enforce the SKU cap in the database.
 - **CD-104:** rate-limit the import action.
+
+**CD-022 ticked.** The reviewer approved after four rounds, the security audit passed in two,
+and CI is green at 767558c, including the Playwright run that imports 5,000 rows through the
+screen in under 60 s. Rounds 3–4 aligned the Zod and database rules for blank and control
+characters; a database test now sends every row the schema accepts through `import_products`.
+Totals: 302 unit tests, 245 database tests. The decision on value, weight and image changes
+marking codes Outdated (above) is still open for the owner.
