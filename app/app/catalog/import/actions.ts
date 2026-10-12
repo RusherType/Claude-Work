@@ -11,55 +11,74 @@ import { listMyWorkspaces } from "@/lib/workspace";
 
 export type BatchResult =
   | { status: "ok"; inserted: number; updated: number; unchanged: number }
-  | { status: "error"; message: string };
+  /** `retryable`: sending the same batch again may work (network, a concurrent import). */
+  | { status: "error"; message: string; retryable: boolean };
 
 const WRITE_ROLES = new Set(["owner", "admin", "member"]);
+const REJECTED =
+  "Some rows have values the catalog does not accept. Download the rows that were not imported, fix them and import that file.";
 
-function errorMessage(error: { code?: string; message?: string }): string {
+function failure(error: { code?: string }): BatchResult {
   switch (error.code) {
     case "42501":
-      return "You don't have permission to import products into this workspace.";
+      return {
+        status: "error",
+        retryable: false,
+        message:
+          "You don't have permission to import products into this workspace.",
+      };
     case "23505":
-      return "Some SKUs were saved by someone else at the same time. Run the import again; existing SKUs are updated, not duplicated.";
+      return {
+        status: "error",
+        retryable: true,
+        message:
+          "Someone saved some of these SKUs at the same time. Retry: existing SKUs are updated, not duplicated.",
+      };
     case "23514":
-    case "22001":
     case "23502":
-      return "Some rows have values the catalog does not accept. Check the file and try again.";
+    case "22001":
+    case "22003":
+    case "22P02":
+    case "22P05":
+    case "22023":
+      return { status: "error", retryable: false, message: REJECTED };
     default:
-      return "The import stopped because of a problem on our side. Try again.";
+      return {
+        status: "error",
+        retryable: true,
+        message: "The import stopped because of a problem on our side. Retry.",
+      };
   }
 }
 
 export async function importProductBatch(input: unknown): Promise<BatchResult> {
   const parsed = importBatchSchema.safeParse(input);
   if (!parsed.success) {
-    return {
-      status: "error",
-      message:
-        "Some rows have values the catalog does not accept. Check the file and try again.",
-    };
+    return { status: "error", retryable: false, message: REJECTED };
   }
   const user = await getCurrentUser();
-  if (!user)
+  if (!user) {
     return {
       status: "error",
-      message: "Your session has ended. Sign in again.",
+      retryable: false,
+      message:
+        "Your session has ended. Sign in again, then import the remaining rows.",
     };
+  }
   const workspace = (await listMyWorkspaces(user.id)).find(
     (w) => w.id === parsed.data.workspaceId,
   );
   if (!workspace || !WRITE_ROLES.has(workspace.role)) {
-    return { status: "error", message: errorMessage({ code: "42501" }) };
+    return failure({ code: "42501" });
   }
 
   const supabase = await createClient();
-  if (!supabase) return { status: "error", message: errorMessage({}) };
+  if (!supabase) return failure({});
   const { data, error } = await supabase.rpc("import_products", {
     p_workspace_id: workspace.id,
     p_rows: parsed.data.rows,
   });
-  if (error || !data?.[0])
-    return { status: "error", message: errorMessage(error ?? {}) };
+  if (error || !data?.[0]) return failure(error ?? {});
   revalidatePath("/app", "layout");
   return { status: "ok", ...data[0] };
 }

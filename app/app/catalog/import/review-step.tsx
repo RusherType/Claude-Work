@@ -1,34 +1,35 @@
 "use client";
 
-import Link from "next/link";
-import { toCsv } from "@/lib/catalog/csv";
-import type { CheckedRow } from "@/lib/catalog/import";
+import { problemsCsv, type CheckResult } from "@/lib/catalog/import";
 import { primary, secondary } from "@/lib/ui/styles";
-import type { Progress } from "./import-wizard";
+import type { FileData } from "./import-wizard";
+import { StepHeading } from "./step-heading";
 import { download } from "./upload-step";
 
 const SHOWN_ERRORS = 50;
 
 export function ReviewStep({
-  fileName,
-  checked,
+  file,
+  result,
   onBack,
   onImport,
 }: {
-  fileName: string;
-  checked: CheckedRow[];
+  file: FileData;
+  result: CheckResult;
   onBack: () => void;
   onImport: () => void;
 }) {
+  const { checked, blank, merged } = result;
   const ready = checked.filter((c) => c.row).length;
   const failed = checked.filter((c) => !c.row);
 
   return (
     <div className="flex flex-col gap-4">
+      <StepHeading step={3} title="Review and import" focus />
       <p className="text-sm" role="status">
         <span className="font-medium">{ready.toLocaleString()}</span> of{" "}
-        {checked.length.toLocaleString()} rows in {fileName} are ready to
-        import.
+        {checked.length.toLocaleString()} products in {file.fileName} are ready
+        to import.
         {failed.length > 0 && (
           <>
             {" "}
@@ -39,10 +40,17 @@ export function ReviewStep({
           </>
         )}
       </p>
+      {(blank > 0 || merged > 0) && (
+        <p className="text-muted text-sm">
+          {blank > 0 && `${blank.toLocaleString()} blank rows ignored. `}
+          {merged > 0 &&
+            `${merged.toLocaleString()} image-only rows added to their product.`}
+        </p>
+      )}
       <p className="text-muted text-sm">
         Existing SKUs are updated; blank cells keep what is already saved.
-        Changing a product&apos;s title, description, type or tags marks a
-        confirmed code Outdated so it is checked again.
+        Changing a product&apos;s title, description, type, tags, images, value
+        or weight marks a confirmed code Outdated so it is checked again.
       </p>
 
       {failed.length > 0 && (
@@ -84,19 +92,16 @@ export function ReviewStep({
               className={secondary}
               onClick={() =>
                 download(
-                  "clearduty-import-problems.csv",
-                  toCsv([
-                    ["line", "problems"],
-                    ...failed.map((c) => [
-                      String(c.line),
-                      c.errors.map((e) => e.message).join("; "),
-                    ]),
-                  ]),
+                  "clearduty-rows-to-fix.csv",
+                  problemsCsv(file.headers, failed),
                 )
               }
             >
-              Download problems (CSV)
+              Download rows to fix (CSV)
             </button>
+            <span className="text-muted text-xs">
+              Fix them and import that file; the problems column is ignored.
+            </span>
           </div>
         </div>
       )}
@@ -114,98 +119,6 @@ export function ReviewStep({
           Change columns
         </button>
       </div>
-    </div>
-  );
-}
-
-export function ResultStep({
-  progress,
-  skipped,
-  onRetry,
-  onRestart,
-}: {
-  progress: Progress;
-  skipped: number;
-  onRetry: () => void;
-  onRestart: () => void;
-}) {
-  const { done, total, totals, error, remaining } = progress;
-  const finished = remaining.length === 0;
-  const percent = total === 0 ? 100 : Math.round((done / total) * 100);
-
-  return (
-    <div className="border-border bg-surface flex flex-col gap-4 rounded-lg border p-6">
-      <div className="flex flex-col gap-2">
-        <p className="text-sm" role="status" aria-live="polite">
-          {finished
-            ? "Import finished."
-            : error
-              ? `Import stopped after ${done.toLocaleString()} of ${total.toLocaleString()} products.`
-              : `Importing… ${done.toLocaleString()} of ${total.toLocaleString()} products`}
-        </p>
-        <div
-          className="bg-border h-2 overflow-hidden rounded-full"
-          role="progressbar"
-          aria-label="Import progress"
-          aria-valuemin={0}
-          aria-valuemax={total}
-          aria-valuenow={done}
-        >
-          <div
-            className="bg-brand h-full transition-[width] motion-reduce:transition-none"
-            style={{ width: `${percent}%` }}
-          />
-        </div>
-      </div>
-
-      <dl className="grid grid-cols-3 gap-4 text-sm sm:max-w-md">
-        {(
-          [
-            ["Added", totals.inserted],
-            ["Updated", totals.updated],
-            ["Unchanged", totals.unchanged],
-          ] as const
-        ).map(([label, n]) => (
-          <div key={label}>
-            <dt className="text-muted text-xs">{label}</dt>
-            <dd
-              className="font-mono text-lg"
-              data-testid={`import-${label.toLowerCase()}`}
-            >
-              {n.toLocaleString()}
-            </dd>
-          </div>
-        ))}
-      </dl>
-      {skipped > 0 && (
-        <p className="text-muted text-sm">
-          {skipped.toLocaleString()} rows with problems were skipped.
-        </p>
-      )}
-
-      {error && (
-        <div className="flex flex-col gap-2">
-          <p role="alert" className="text-risk text-sm">
-            {error}
-          </p>
-          <div>
-            <button type="button" onClick={onRetry} className={primary}>
-              Retry the remaining {(total - done).toLocaleString()}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {finished && (
-        <div className="flex flex-wrap gap-3">
-          <Link href="/app" className={primary}>
-            Go to dashboard
-          </Link>
-          <button type="button" onClick={onRestart} className={secondary}>
-            Import another file
-          </button>
-        </div>
-      )}
     </div>
   );
 }

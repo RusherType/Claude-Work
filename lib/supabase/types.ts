@@ -1202,6 +1202,10 @@ export type Database = {
           isSetofReturn: true;
         };
       };
+      all_match: {
+        Args: { p_max_length: number; p_pattern: string; p_values: string[] };
+        Returns: boolean;
+      };
       create_invitation: {
         Args: {
           p_email: string;
@@ -1260,11 +1264,15 @@ export type Database = {
       };
       product_content_hash: {
         Args: {
+          p_currency: string;
+          p_customs_value: number;
           p_description: string;
           p_facts: Json;
+          p_image_urls: string[];
           p_product_type: string;
           p_tags: string[];
           p_title: string;
+          p_weight_kg: number;
         };
         Returns: string;
       };

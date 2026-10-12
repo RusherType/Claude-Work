@@ -18,8 +18,8 @@ export default async function ImportPage() {
       <div>
         <h1 className="text-xl font-semibold">Import products</h1>
         <p className="text-muted mt-1 text-sm">
-          Add or update products in {workspace.name} from a CSV file. Every
-          product starts without a code; ClearDuty suggests one after import.
+          Add or update products in {workspace.name} from a CSV file. Imported
+          products have no tariff code yet; classification comes next.
         </p>
       </div>
       {canImport ? (

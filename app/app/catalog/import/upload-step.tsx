@@ -9,6 +9,7 @@ import {
   templateRows,
 } from "@/lib/catalog/import";
 import { primary, secondary } from "@/lib/ui/styles";
+import { StepHeading } from "./step-heading";
 
 /** Save generated text as a file in the browser. */
 export function download(name: string, text: string) {
@@ -25,14 +26,17 @@ export function download(name: string, text: string) {
 export function UploadStep({
   error,
   onFile,
+  focus,
 }: {
   error: string | null;
   onFile: (file: File) => Promise<void>;
+  focus: boolean;
 }) {
   const [reading, setReading] = useState(false);
 
   return (
     <div className="flex flex-col gap-6">
+      <StepHeading step={1} title="Choose a file" focus={focus} />
       <form
         className="border-border bg-surface flex flex-col gap-4 rounded-lg border p-6"
         onSubmit={async (e) => {
@@ -59,7 +63,8 @@ export function UploadStep({
           />
           <p id="csv-help" className="text-muted text-xs">
             Up to {MAX_ROWS.toLocaleString()} rows and 10 MB. The first line
-            holds the column names. A Shopify product export works too.
+            holds the column names. A Shopify product export works too: each
+            variant becomes a product.
           </p>
         </div>
         {error && (

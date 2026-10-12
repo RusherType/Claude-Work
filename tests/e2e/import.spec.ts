@@ -1,4 +1,9 @@
-import { expect, test, type Page } from "@playwright/test";
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+} from "@playwright/test";
 import { hasSupabase, signInFromSignInPage, uniqueEmail } from "./helpers";
 
 // CD-022: upload a CSV, map columns, see per-row problems, import, then re-import the same file.
@@ -20,6 +25,24 @@ async function upload(page: Page, name: string, text: string) {
   await page.getByRole("button", { name: "Continue" }).click();
 }
 
+async function newWorkspace(
+  page: Page,
+  request: APIRequestContext,
+  tag: string,
+  project: string,
+) {
+  await page.goto("/app");
+  await signInFromSignInPage(page, request, uniqueEmail(tag, project));
+  await page.getByLabel("Company name").fill(`Import ${Date.now()}`);
+  await page.getByLabel("Home country").selectOption("US");
+  await page.getByLabel("I sell to US shoppers from abroad").check();
+  await page.getByRole("button", { name: "Create workspace" }).click();
+  await expect(
+    page.getByRole("heading", { name: /^Welcome to/ }),
+  ).toBeVisible();
+  await page.goto("/app/catalog/import");
+}
+
 test.describe("CSV import", () => {
   test.skip(!hasSupabase, "needs a local Supabase (CI)");
 
@@ -27,21 +50,7 @@ test.describe("CSV import", () => {
     page,
     request,
   }, testInfo) => {
-    await page.goto("/app");
-    await signInFromSignInPage(
-      page,
-      request,
-      uniqueEmail("import", testInfo.project.name),
-    );
-    await page.getByLabel("Company name").fill(`Import ${Date.now()}`);
-    await page.getByLabel("Home country").selectOption("US");
-    await page.getByLabel("I sell to US shoppers from abroad").check();
-    await page.getByRole("button", { name: "Create workspace" }).click();
-    await expect(
-      page.getByRole("heading", { name: /^Welcome to/ }),
-    ).toBeVisible();
-
-    await page.goto("/app/catalog/import");
+    await newWorkspace(page, request, "import", testInfo.project.name);
     await expect(
       page.getByRole("heading", { name: "Import products" }),
     ).toBeVisible();
@@ -53,11 +62,11 @@ test.describe("CSV import", () => {
 
     // Columns from a Shopify-style export are matched automatically.
     await upload(page, "products.csv", CSV);
-    await expect(page.getByLabel("SKU *")).toHaveValue("0");
+    await expect(page.getByLabel("SKU (required)")).toHaveValue("0");
     await expect(page.getByLabel("Country of origin")).toHaveValue("2");
     await page.getByRole("button", { name: "Check rows" }).click();
 
-    await expect(page.getByRole("status")).toContainText("2 of 4 rows");
+    await expect(page.getByRole("status")).toContainText("2 of 4 products");
     const problems = page.getByRole("table", { name: "Rows with problems" });
     await expect(problems.getByRole("row", { name: /^4 / })).toContainText(
       '"Atlantis" is not a country',
@@ -78,5 +87,33 @@ test.describe("CSV import", () => {
     await expect(page.getByText("Import finished.")).toBeVisible();
     await expect(page.getByTestId("import-added")).toHaveText("0");
     await expect(page.getByTestId("import-unchanged")).toHaveText("2");
+  });
+
+  test("imports 5,000 rows in under 60 seconds", async ({
+    page,
+    request,
+  }, testInfo) => {
+    test.setTimeout(180_000);
+    await newWorkspace(page, request, "bulk", testInfo.project.name);
+    const rows = Array.from(
+      { length: 5000 },
+      (_, i) =>
+        `BULK-${i},"Cotton T-shirt ${i}, crew neck",100% cotton knit,CN,4.20`,
+    );
+    await upload(
+      page,
+      "bulk.csv",
+      ["sku,title,description,origin_country,customs_value", ...rows].join(
+        "\n",
+      ),
+    );
+    await page.getByRole("button", { name: "Check rows" }).click();
+    const start = Date.now();
+    await page.getByRole("button", { name: "Import 5,000 products" }).click();
+    await expect(page.getByText("Import finished.")).toBeVisible({
+      timeout: 60_000,
+    });
+    expect(Date.now() - start).toBeLessThan(60_000);
+    await expect(page.getByTestId("import-added")).toHaveText("5,000");
   });
 });

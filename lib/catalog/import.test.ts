@@ -1,13 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { parseCsv, toCsv } from "./csv";
+import { parseCsv, parseCsvRows, toCsv, type CsvRow } from "./csv";
 import {
   checkRow,
   checkRows,
   FIELDS,
   guessMapping,
   importBatchSchema,
+  isCurrencyCode,
   mappingProblems,
   planBatches,
+  problemsCsv,
+  rowsCsv,
+  shopifyColumns,
   templateRows,
   type Mapping,
 } from "./import";
@@ -15,6 +19,9 @@ import {
 const ALL: Mapping = Object.fromEntries(FIELDS.map((f, i) => [f, i]));
 const cells = (over: Partial<Record<(typeof FIELDS)[number], string>> = {}) =>
   FIELDS.map((f) => over[f] ?? "");
+const numbered = (rows: string[][]): CsvRow[] =>
+  rows.map((c, i) => ({ line: i + 2, cells: c }));
+const USD = { currency: "USD" };
 
 describe("guessMapping", () => {
   it("maps our template headers exactly", () => {
@@ -49,8 +56,15 @@ describe("guessMapping", () => {
     expect(
       guessMapping(["Product Name", "Country of Origin", "Weight (kg)", "SKU"]),
     ).toEqual({ title: 0, origin_country: 1, weight_kg: 2, sku: 3 });
-    const m = guessMapping(["name", "name"]);
-    expect(m).toEqual({ title: 0 });
+    expect(guessMapping(["name", "name"])).toEqual({ title: 0 });
+  });
+
+  it("does not guess a weight column that may be in pounds", () => {
+    expect(guessMapping(["SKU", "Title", "Weight", "Net weight"])).toEqual({
+      sku: 0,
+      title: 1,
+    });
+    expect(guessMapping(["Weight in kg"])).toEqual({ weight_kg: 0 });
   });
 });
 
@@ -83,6 +97,7 @@ describe("checkRow", () => {
       }),
       ALL,
       2,
+      USD,
     );
     expect(r.errors).toEqual([]);
     expect(r.row).toEqual({
@@ -101,7 +116,7 @@ describe("checkRow", () => {
   });
 
   it("leaves blank and unmapped cells as null", () => {
-    const r = checkRow(["S1", "T"], { sku: 0, title: 1 }, 2);
+    const r = checkRow(["S1", "T"], { sku: 0, title: 1 }, 2, USD);
     expect(r.row).toMatchObject({
       origin_country: null,
       customs_value: null,
@@ -110,16 +125,53 @@ describe("checkRow", () => {
     });
   });
 
+  it("uses the file's currency for values without one, and ignores a currency without a value", () => {
+    const value = checkRow(
+      cells({ sku: "S", title: "T", customs_value: "5" }),
+      ALL,
+      2,
+      {
+        currency: "GBP",
+      },
+    );
+    expect(value.row).toMatchObject({ customs_value: "5", currency: "GBP" });
+    const noValue = checkRow(
+      cells({ sku: "S", title: "T", currency: "EUR" }),
+      ALL,
+      2,
+      USD,
+    );
+    expect(noValue.row).toMatchObject({ customs_value: null, currency: null });
+    const noFileCurrency = checkRow(
+      cells({ sku: "S", title: "T", customs_value: "5" }),
+      ALL,
+      2,
+    );
+    expect(noFileCurrency.errors.map((e) => e.field)).toEqual(["currency"]);
+  });
+
+  it("accepts ISO 4217 currencies only", () => {
+    expect(isCurrencyCode("EUR")).toBe(true);
+    expect(isCurrencyCode("XYZ")).toBe(false);
+    const r = checkRow(
+      cells({ sku: "S", title: "T", customs_value: "5", currency: "XYZ" }),
+      ALL,
+      2,
+      USD,
+    );
+    expect(r.errors.map((e) => e.field)).toEqual(["currency"]);
+  });
+
   it("reports every problem in the row with the field and line", () => {
     const r = checkRow(
       cells({
         origin_country: "Atlantis",
         customs_value: "12,50",
         weight_kg: "heavy",
-        currency: "dollars",
       }),
       ALL,
       7,
+      USD,
     );
     expect(r.row).toBeNull();
     expect(r.line).toBe(7);
@@ -129,19 +181,25 @@ describe("checkRow", () => {
       "origin_country",
       "customs_value",
       "weight_kg",
-      "currency",
     ]);
     expect(r.errors[3].message).toMatch(/use a dot for decimals/);
   });
 
-  it("rejects negative amounts, too many decimals and non-https images", () => {
+  it("rejects values the database columns cannot hold", () => {
     const check = (over: Parameters<typeof cells>[0]) =>
-      checkRow(cells({ sku: "S", title: "T", ...over }), ALL, 2).errors.map(
-        (e) => e.field,
-      );
+      checkRow(
+        cells({ sku: "S", title: "T", ...over }),
+        ALL,
+        2,
+        USD,
+      ).errors.map((e) => e.field);
     expect(check({ customs_value: "-1" })).toEqual(["customs_value"]);
     expect(check({ customs_value: "1.234" })).toEqual(["customs_value"]);
+    expect(check({ customs_value: "12345678901" })).toEqual(["customs_value"]);
+    expect(check({ customs_value: "1234567890.99" })).toEqual([]);
     expect(check({ weight_kg: "1.2345" })).toEqual(["weight_kg"]);
+    expect(check({ weight_kg: "12345678" })).toEqual(["weight_kg"]);
+    expect(check({ weight_kg: "1234567.125" })).toEqual([]);
     expect(check({ image_urls: "http://a.test/x.jpg" })).toEqual([
       "image_urls",
     ]);
@@ -150,48 +208,159 @@ describe("checkRow", () => {
     ]);
     expect(check({ title: "x".repeat(501) })).toEqual(["title"]);
   });
+
+  it("rejects control characters such as NUL from a mis-decoded file", () => {
+    const r = checkRow(
+      cells({ sku: "S", title: "T\u0000e\u0000e" }),
+      ALL,
+      2,
+      USD,
+    );
+    expect(r.errors[0].message).toBe("Title: contains control characters");
+    expect(
+      checkRow(
+        cells({ sku: "S", title: "T", description: "a\tb\nc" }),
+        ALL,
+        2,
+        USD,
+      ).errors,
+    ).toEqual([]);
+  });
 });
 
 describe("checkRows", () => {
   it("flags repeated SKUs with the line of the first one", () => {
-    const rows = [
-      ["A", "One"],
-      ["B", "Two"],
-      ["A", "Three"],
-    ];
-    const checked = checkRows(rows, { sku: 0, title: 1 });
+    const { checked } = checkRows(
+      numbered([
+        ["A", "One"],
+        ["B", "Two"],
+        ["A", "Three"],
+      ]),
+      { sku: 0, title: 1 },
+    );
     expect(checked.map((c) => c.line)).toEqual([2, 3, 4]);
     expect(checked[2].row).toBeNull();
     expect(checked[2].errors[0].message).toMatch(/same SKU as line 2/);
   });
 
+  it("keeps real line numbers and ignores blank rows", () => {
+    const [, ...rows] = parseCsvRows(
+      'sku,title\nA,One\n\n"B","Two\nlines"\n,\n,,,\nC,Three\n',
+    );
+    const { checked, blank } = checkRows(rows, { sku: 0, title: 1 });
+    expect(checked.map((c) => c.line)).toEqual([2, 4, 8]);
+    expect(checked.every((c) => c.errors.length === 0)).toBe(true);
+    expect(blank).toBe(2);
+  });
+
   it("checks 5,000 rows quickly", () => {
-    const rows = Array.from({ length: 5000 }, (_, i) =>
-      cells({
-        sku: `SKU-${i}`,
-        title: `Product ${i}`,
-        origin_country: "CN",
-        customs_value: "4.20",
-      }),
+    const rows = numbered(
+      Array.from({ length: 5000 }, (_, i) =>
+        cells({
+          sku: `SKU-${i}`,
+          title: `Product ${i}`,
+          origin_country: "CN",
+          customs_value: "4.20",
+        }),
+      ),
     );
     const start = performance.now();
-    const checked = checkRows(rows, ALL);
+    const { checked } = checkRows(rows, ALL, USD);
     expect(checked.every((c) => c.errors.length === 0)).toBe(true);
     expect(performance.now() - start).toBeLessThan(2000);
   });
 });
 
+describe("Shopify product export", () => {
+  // One product with two variants and an extra image, then a product with a single variant.
+  const csv = [
+    "Handle,Title,Body (HTML),Vendor,Type,Tags,Option1 Value,Variant SKU,Image Src,Cost per item",
+    'crew-tee,Crew T-shirt,100% cotton,Acme,T-shirts,"cotton, menswear",M,TEE-M,https://cdn.test/tee-1.jpg,4.20',
+    ",,,,,,,,,",
+    "crew-tee,,,,,,L,TEE-L,,4.40",
+    "crew-tee,,,,,,,,https://cdn.test/tee-2.jpg,",
+    "mug,Ceramic mug,Stoneware mug,Acme,Mugs,,Default Title,MUG-1,https://cdn.test/mug.jpg,2.10",
+    "no-sku,Mystery,,,,,Default Title,,,",
+  ].join("\n");
+
+  const run = () => {
+    const [header, ...rows] = parseCsvRows(csv);
+    const mapping = guessMapping(header.cells);
+    return checkRows(rows, mapping, {
+      currency: "USD",
+      shopify: shopifyColumns(header.cells),
+    });
+  };
+
+  it("turns each variant into a product with the product's details", () => {
+    const { checked } = run();
+    const ok = checked.filter((c) => c.row).map((c) => c.row!);
+    expect(ok.map((r) => [r.sku, r.title])).toEqual([
+      ["TEE-M", "Crew T-shirt (M)"],
+      ["TEE-L", "Crew T-shirt (L)"],
+      ["MUG-1", "Ceramic mug"],
+    ]);
+    expect(ok[1]).toMatchObject({
+      description: "100% cotton",
+      vendor: "Acme",
+      product_type: "T-shirts",
+      tags: ["cotton", "menswear"],
+      customs_value: "4.40",
+      // No image of its own: it gets every image of the product.
+      image_urls: ["https://cdn.test/tee-1.jpg", "https://cdn.test/tee-2.jpg"],
+    });
+    expect(ok[0].image_urls).toEqual(["https://cdn.test/tee-1.jpg"]);
+  });
+
+  it("merges image-only rows, ignores blank rows, and reports products without a SKU", () => {
+    const { checked, merged, blank } = run();
+    expect(merged).toBe(1);
+    expect(blank).toBe(1);
+    const failed = checked.filter((c) => !c.row);
+    expect(failed.map((c) => c.line)).toEqual([7]);
+    expect(failed[0].errors[0].message).toBe("SKU: required");
+  });
+});
+
+describe("reports", () => {
+  it("exports failed rows in the file's columns, ready to fix and re-import", () => {
+    const headers = ["sku", "title", "origin_country"];
+    const failed = checkRows(numbered([["S1", "Tee", "Atlantis"]]), {
+      sku: 0,
+      title: 1,
+      origin_country: 2,
+    }).checked;
+    const [head, row] = parseCsv(problemsCsv(headers, failed));
+    expect(head).toEqual(["sku", "title", "origin_country", "problems"]);
+    expect(row.slice(0, 3)).toEqual(["S1", "Tee", "Atlantis"]);
+    expect(row[3]).toMatch(/Atlantis/);
+    // Re-importing the fixed file ignores the extra column.
+    expect(guessMapping(head)).toEqual({ sku: 0, title: 1, origin_country: 2 });
+  });
+
+  it("exports rows that were not sent yet", () => {
+    const rows = checkRows(numbered([["S1", "Tee"]]), {
+      sku: 0,
+      title: 1,
+    }).checked;
+    expect(parseCsv(rowsCsv(["sku", "title"], rows))).toEqual([
+      ["sku", "title"],
+      ["S1", "Tee"],
+    ]);
+  });
+});
+
 describe("template", () => {
   it("is a valid import of one product", () => {
-    const [headers, ...rows] = parseCsv(toCsv(templateRows()));
-    const checked = checkRows(rows, guessMapping(headers));
+    const [header, ...rows] = parseCsvRows(toCsv(templateRows()));
+    const { checked } = checkRows(rows, guessMapping(header.cells), USD);
     expect(checked).toHaveLength(1);
     expect(checked[0].errors).toEqual([]);
   });
 });
 
 describe("importBatchSchema", () => {
-  const row = checkRow(cells({ sku: "S", title: "T" }), ALL, 2).row!;
+  const row = checkRow(cells({ sku: "S", title: "T" }), ALL, 2, USD).row!;
   const workspaceId = "00000000-0000-4000-8000-000000000001";
 
   it("accepts a valid batch", () => {
@@ -200,15 +369,19 @@ describe("importBatchSchema", () => {
     ).toBe(true);
   });
 
-  it("rejects duplicates, extra fields, empty and oversized batches", () => {
-    const bad = (rows: unknown[]) =>
+  it("rejects duplicates, extra fields, unpaired values, empty and oversized batches", () => {
+    const ok = (rows: unknown[]) =>
       importBatchSchema.safeParse({ workspaceId, rows }).success;
-    expect(bad([row, row])).toBe(false);
-    expect(bad([{ ...row, content_hash: "x" }])).toBe(false);
-    expect(bad([{ ...row, workspace_id: workspaceId }])).toBe(false);
-    expect(bad([])).toBe(false);
+    expect(ok([row, row])).toBe(false);
+    expect(ok([{ ...row, content_hash: "x" }])).toBe(false);
+    expect(ok([{ ...row, workspace_id: workspaceId }])).toBe(false);
+    expect(ok([{ ...row, customs_value: "5" }])).toBe(false);
+    expect(ok([{ ...row, currency: "USD" }])).toBe(false);
+    expect(ok([{ ...row, customs_value: "5", currency: "USD" }])).toBe(true);
+    expect(ok([{ ...row, title: "a\u0000b" }])).toBe(false);
+    expect(ok([])).toBe(false);
     expect(
-      bad(Array.from({ length: 501 }, (_, i) => ({ ...row, sku: `S${i}` }))),
+      ok(Array.from({ length: 501 }, (_, i) => ({ ...row, sku: `S${i}` }))),
     ).toBe(false);
     expect(
       importBatchSchema.safeParse({ workspaceId: "x", rows: [row] }).success,
@@ -219,7 +392,7 @@ describe("importBatchSchema", () => {
 describe("planBatches", () => {
   const make = (n: number, description: string | null = null) =>
     Array.from({ length: n }, (_, i) => ({
-      ...checkRow(cells({ sku: `S${i}`, title: "T" }), ALL, 2).row!,
+      ...checkRow(cells({ sku: `S${i}`, title: "T" }), ALL, 2, USD).row!,
       description,
     }));
 
@@ -231,8 +404,7 @@ describe("planBatches", () => {
   });
 
   it("splits by size so each request stays under the limit", () => {
-    const rows = make(100, "é".repeat(19000)); // about 38 KB of UTF-8 each
-    const batches = planBatches(rows);
+    const batches = planBatches(make(100, "é".repeat(19000)));
     expect(batches.length).toBeGreaterThan(1);
     for (const b of batches) {
       expect(new TextEncoder().encode(JSON.stringify(b)).length).toBeLessThan(

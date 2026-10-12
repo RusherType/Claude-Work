@@ -204,3 +204,32 @@ Both are fixed and tested.
     a confirmed product, keep the old hash, and skip "outdated";
   - products get value checks.
 - A required SKU is the owner-facing rule: rows without one are reported, not imported.
+
+**CD-022 review and audit, round 1:** the security audit passed with 4 mediums, and the reviewer
+listed 14 changes. All are fixed except the rate limit and SKU cap, which belong to CD-104 and
+CD-091. Fixes:
+- **Uninstall:** deleting a store integration no longer collides with manual SKUs.
+- **Database limits:** they now match the Zod schema (https-only images, no NaN, text lengths),
+  and the hash is now SHA-256.
+- **Deleted workspaces:** imports into a deleted workspace are refused.
+- **Overflow and bad characters:** values too large for their column, and control characters such
+  as NUL, are reported per row instead of failing a whole batch.
+- **Encoding:** Windows-1252 files from Excel are read correctly, and UTF-16 or semicolon-separated
+  files get clear instructions.
+- **Shopify exports:** each variant becomes a product with the product's details and images, and
+  image-only rows are merged.
+- **Weight:** a bare "Weight" header is not assumed to be kilograms.
+- **Value and currency:** they are always stored together, with ISO 4217 codes and a
+  "Currency of customs values" choice per file.
+- **Line numbers:** they are real file lines, and blank rows are ignored.
+- **Re-importing problems:** the problems download is the failed rows in the file's own columns,
+  so it can be fixed and imported again.
+- **Screen:** step headings take focus, leaving mid-import asks for confirmation, Retry is offered
+  only when it can help (otherwise "Download rows not imported"), and the e2e test now imports
+  5,000 rows through the screen in under 60 s.
+
+**Decision to confirm (owner):** at the auditor's request, changes to a product's images, customs
+value or currency, or weight now mark a confirmed code Outdated. Some HTS lines split on value
+("valued over $2.50/pair") or weight, and the agent reads images. This reverses my first design
+(only text changes), so the DB test now asserts the stricter behaviour. Vendor and origin still
+don't trigger a re-check. Say if you prefer fewer re-checks.

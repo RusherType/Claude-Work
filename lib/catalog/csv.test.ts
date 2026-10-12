@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CsvError, csvCell, parseCsv, toCsv } from "./csv";
+import {
+  CsvError,
+  csvCell,
+  decodeCsvFile,
+  parseCsv,
+  parseCsvRows,
+  toCsv,
+} from "./csv";
 
 describe("parseCsv", () => {
   it("reads simple rows with LF or CRLF", () => {
@@ -73,5 +80,42 @@ describe("csv output", () => {
     expect(csvCell("=HYPERLINK(1)")).toBe("'=HYPERLINK(1)");
     expect(csvCell("-5")).toBe("'-5");
     expect(csvCell("@x")).toBe("'@x");
+  });
+});
+
+describe("parseCsvRows", () => {
+  it("numbers rows by the line they start on", () => {
+    expect(
+      parseCsvRows('a,b\n\n"x\ny",z\r\nlast,1').map((r) => r.line),
+    ).toEqual([1, 3, 5]);
+  });
+});
+
+describe("decodeCsvFile", () => {
+  const bytes = (...b: number[]) => new Uint8Array(b);
+
+  it("reads UTF-8", () => {
+    const utf8 = new TextEncoder().encode("sku,title\nA,Café ™");
+    expect(decodeCsvFile(utf8)).toEqual({
+      text: "sku,title\nA,Café ™",
+      encoding: "utf-8",
+    });
+  });
+
+  it("falls back to Windows-1252 for Excel's default CSV", () => {
+    // "Café ™ ½" in Windows-1252
+    const result = decodeCsvFile(
+      bytes(0x43, 0x61, 0x66, 0xe9, 0x20, 0x99, 0x20, 0xbd),
+    );
+    expect(result).toEqual({ text: "Café ™ ½", encoding: "windows-1252" });
+  });
+
+  it("refuses UTF-16 with instructions", () => {
+    expect(() => decodeCsvFile(bytes(0xff, 0xfe, 0x61, 0x00))).toThrow(
+      /CSV UTF-8/,
+    );
+    expect(() => decodeCsvFile(bytes(0xfe, 0xff, 0x00, 0x61))).toThrow(
+      /CSV UTF-8/,
+    );
   });
 });

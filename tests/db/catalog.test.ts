@@ -100,6 +100,7 @@ describeDb("catalog import (live database)", () => {
         tags: ["cotton"],
         origin_country: "CN",
         customs_value: "4.20",
+        currency: "USD",
         weight_kg: "0.180",
       }),
       row("B"),
@@ -115,13 +116,17 @@ describeDb("catalog import (live database)", () => {
       currency: "USD",
       integration_id: null,
     });
-    expect(a.content_hash).toMatch(/^[0-9a-f]{32}$/);
+    expect(a.content_hash).toMatch(/^[0-9a-f]{64}$/); // SHA-256
   });
 
   it("updates existing SKUs, keeps stored values for blank cells, and counts unchanged rows", async () => {
     const counts = await importAs(user.member, ws, [
       row("A"), // nothing new
-      row("B", { title: "Product B v2", currency: "EUR" }),
+      row("B", {
+        title: "Product B v2",
+        customs_value: "3.00",
+        currency: "EUR",
+      }),
       row("C"),
     ]);
     expect(counts).toEqual({ inserted: 1, updated: 1, unchanged: 1 });
@@ -132,7 +137,23 @@ describeDb("catalog import (live database)", () => {
     });
     expect(await product("B")).toMatchObject({
       title: "Product B v2",
+      customs_value: "3.00",
       currency: "EUR",
+    });
+  });
+
+  it("stores a value with its currency, and keeps both when the value is blank", async () => {
+    await importAs(user.member, ws, [
+      row("A", { customs_value: "5.00", currency: "GBP" }),
+    ]);
+    expect(await product("A")).toMatchObject({
+      customs_value: "5.00",
+      currency: "GBP",
+    });
+    await importAs(user.member, ws, [row("A")]);
+    expect(await product("A")).toMatchObject({
+      customs_value: "5.00",
+      currency: "GBP",
     });
   });
 
@@ -164,21 +185,118 @@ describeDb("catalog import (live database)", () => {
        values ($1, $2, $3, '6109100012', 'confirmed', 'ai', true, now())`,
       [classification, ws, b.id],
     );
-    // Value-only change: still confirmed.
-    await importAs(user.member, ws, [
-      row("B", { title: "Product B v2", customs_value: "9.99" }),
-    ]);
     const status = async () =>
       (
         await db.query("select status from classifications where id = $1", [
           classification,
         ])
       ).rows[0].status;
-    expect(await status()).toBe("confirmed");
+    const reconfirm = () =>
+      db.query(
+        "update classifications set status = 'confirmed' where id = $1",
+        [classification],
+      );
+
+    // Vendor and origin do not change the code: still confirmed.
     await importAs(user.member, ws, [
-      row("B", { title: "Product B, ceramic" }),
+      row("B", { title: "Product B v2", vendor: "Acme", origin_country: "VN" }),
     ]);
-    expect(await status()).toBe("outdated");
+    expect(await status()).toBe("confirmed");
+
+    // Text, value, weight and images can change the code (value- and weight-split HTS lines).
+    for (const change of [
+      { title: "Product B, ceramic" },
+      { customs_value: "9.99", currency: "USD" },
+      { weight_kg: "12.5" },
+      { image_urls: ["https://img.test/b.jpg"] },
+    ]) {
+      await reconfirm();
+      await importAs(user.member, ws, [
+        row("B", { title: "Product B, ceramic", ...change }),
+      ]);
+      expect(await status(), JSON.stringify(change)).toBe("outdated");
+    }
+  });
+
+  it("lets an integration be deleted when its products share SKUs with manual ones", async () => {
+    const integration = randomUUID();
+    await db.query(
+      `insert into integrations (id, workspace_id, provider, shop_domain, status)
+       values ($1, $2, 'shopify', $3, 'active')`,
+      [integration, ws, `del-${ws.slice(0, 8)}.myshopify.com`],
+    );
+    await db.query(
+      `insert into products (workspace_id, integration_id, external_id, sku, title)
+       values ($1, $2, 'gid-a', 'C', 'Shopify C'), ($1, $2, 'gid-b', 'C', 'Shopify C again')`,
+      [ws, integration],
+    );
+    await db.query("delete from integrations where id = $1", [integration]);
+    const { rows } = await db.query(
+      "select count(*)::int as n from products where workspace_id = $1 and sku = 'C'",
+      [ws],
+    );
+    expect(rows[0].n).toBe(3);
+    // A re-import still updates only the manual product.
+    const counts = await importAs(user.member, ws, [
+      row("C", { title: "Manual C" }),
+    ]);
+    expect(counts.updated + counts.unchanged).toBe(1);
+    expect(counts.inserted).toBe(0);
+  });
+
+  it("enforces the import's limits on direct writes too", async () => {
+    const insert = (values: Row) =>
+      tryAs(
+        db,
+        user.member,
+        `insert into products (workspace_id, title, vendor, product_type, tags, image_urls, customs_value, weight_kg)
+         values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+        [
+          ws,
+          values.title ?? "Direct",
+          values.vendor ?? null,
+          values.product_type ?? null,
+          values.tags ?? [],
+          values.image_urls ?? [],
+          values.customs_value ?? null,
+          values.weight_kg ?? null,
+        ],
+      );
+    expect(await insert({})).toBeNull();
+    for (const bad of [
+      { title: "   " },
+      { vendor: "v".repeat(201) },
+      { product_type: "t".repeat(201) },
+      { tags: ["x".repeat(101)] },
+      { tags: [" "] },
+      { image_urls: ["javascript:alert(1)"] },
+      { image_urls: ["http://169.254.169.254/latest"] },
+      { image_urls: ["data:text/html,<script>1</script>"] },
+      { image_urls: [`https://img.test/${"a".repeat(2000)}`] },
+      { customs_value: "NaN" },
+      { weight_kg: "NaN" },
+    ]) {
+      expect((await insert(bad))?.code, JSON.stringify(bad).slice(0, 80)).toBe(
+        "23514",
+      );
+    }
+  });
+
+  it("refuses imports into a deleted workspace", async () => {
+    await db.query("update workspaces set deleted_at = now() where id = $1", [
+      ws,
+    ]);
+    try {
+      await expect(importAs(user.member, ws, [row("Z")])).rejects.toMatchObject(
+        {
+          code: "42501",
+        },
+      );
+    } finally {
+      await db.query("update workspaces set deleted_at = null where id = $1", [
+        ws,
+      ]);
+    }
   });
 
   it("ignores a client-supplied content hash", async () => {
@@ -240,9 +358,15 @@ describeDb("catalog import (live database)", () => {
     await bad([row("D", { title: "" })], "23502");
     await bad(["just text"], "23502");
     await bad([row("D", { origin_country: "cn" })], "23514");
-    await bad([row("D", { customs_value: "-1" })], "23514");
-    await bad([row("D", { currency: "dollars" })], "22001"); // char(3)
-    await bad([row("D", { currency: "us1" })], "23514");
+    await bad([row("D", { customs_value: "-1", currency: "USD" })], "23514");
+    await bad([row("D", { customs_value: "1", currency: "dollars" })], "22001"); // char(3)
+    await bad([row("D", { customs_value: "1", currency: "us1" })], "23514");
+    await bad([row("D", { customs_value: "1" })], "23502"); // value without currency
+    await bad([row("D", { currency: "EUR" })], "23502"); // currency without value
+    await bad(
+      [row("D", { customs_value: "12345678901", currency: "USD" })],
+      "22003",
+    );
     await bad([row("D", { title: "x".repeat(501) })], "23514");
     await bad(
       [row("D", { tags: Array.from({ length: 251 }, () => "t") })],
@@ -265,6 +389,7 @@ describeDb("catalog import (live database)", () => {
           tags: ["cotton", "menswear"],
           origin_country: "CN",
           customs_value: "4.20",
+          currency: "USD",
         }),
       );
       const counts = await importAs(user.member, ws, rows);
