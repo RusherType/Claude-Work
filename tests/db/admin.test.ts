@@ -14,20 +14,37 @@ const user = {
 const TAG = `admin-test-${randomUUID().slice(0, 8)}`;
 let db: Client;
 
+/** Supabase JWT claims: aal2 sessions carry the TOTP check time in `amr`. */
+function claimsFor(uid: string, aal: "aal1" | "aal2" | "stale") {
+  const now = Math.floor(Date.now() / 1000);
+  if (aal === "aal1")
+    return {
+      sub: uid,
+      role: "authenticated",
+      aal,
+      amr: [{ method: "otp", timestamp: now }],
+    };
+  const at = aal === "stale" ? now - 13 * 3600 : now - 60;
+  return {
+    sub: uid,
+    role: "authenticated",
+    aal: "aal2",
+    amr: [{ method: "totp", timestamp: at }],
+  };
+}
+
 /** Run statements as `uid` with the given assurance level in a transaction that is committed
  * (or rolled back on error). Returns the rows of the last statement or the error. */
 async function as(
   uid: string | null,
-  aal: "aal1" | "aal2",
+  aal: "aal1" | "aal2" | "stale",
   statements: [string, unknown[]?][],
 ): Promise<{ rows: Record<string, unknown>[] } | { error: DbError }> {
   await db.query("begin");
   try {
     await db.query(`set local role ${uid ? "authenticated" : "anon"}`);
     await db.query("select set_config('request.jwt.claims', $1, true)", [
-      JSON.stringify(
-        uid ? { sub: uid, role: "authenticated", aal } : { role: "anon" },
-      ),
+      JSON.stringify(uid ? claimsFor(uid, aal) : { role: "anon" }),
     ]);
     let rows: Record<string, unknown>[] = [];
     for (const [sql, params] of statements)
@@ -51,15 +68,24 @@ const MEASURE = `insert into tariff_measures
   (market, authority, ch99_code, hts_prefixes, origin_countries, rate_type, rate_value,
    effective_from, source_url, notes)
   values ('US', 'Section 301', '9903.88.03', '{6109}', '{CN}', 'ad_valorem', 25,
-   '2026-01-01', 'https://www.federalregister.gov/x', $1) returning *`;
+   '2026-01-01', 'https://www.federalregister.gov/x', $1) returning id, published, published_at, rate_value`;
 const FEE = `insert into fee_schedules (market, fee_type, pct, min_amount, max_amount,
    effective_from, source_url, notes)
   values ('US', 'mpf_formal', 0.3464, 32.71, 634.62, '2026-10-01', 'https://www.cbp.gov/x', $1)
-  returning *`;
+  returning id, published`;
 const PROGRAM = `insert into special_programs (symbol, name, countries, mpf_exempt,
    effective_from, source_url, notes)
   values ('S', 'USMCA', '{MX,CA}', true, '2020-07-01', 'https://hts.usitc.gov/gn', $1)
-  returning *`;
+  returning id, published`;
+
+/** Author columns, read as the database owner (signed-in users cannot select them). */
+async function authors(id: string) {
+  const { rows } = await db.query(
+    "select created_by, published_by from tariff_measures where id = $1",
+    [id],
+  );
+  return rows[0] as { created_by: string | null; published_by: string | null };
+}
 
 describeDb("admin editors (live database)", () => {
   beforeAll(async () => {
@@ -84,6 +110,9 @@ describeDb("admin editors (live database)", () => {
       // No signed-in user: maintenance may remove published rows.
       for (const t of ["tariff_measures", "fee_schedules", "special_programs"])
         await db.query(`delete from ${t} where notes = $1`, [TAG]);
+      await db.query("delete from admin_mfa_attempts where user_id = any($1)", [
+        Object.values(user),
+      ]);
       await db.query("delete from reference_audit where actor_id = any($1)", [
         Object.values(user),
       ]);
@@ -111,10 +140,10 @@ describeDb("admin editors (live database)", () => {
 
   it("keeps drafts visible only to admins with a second factor, then publishes", async () => {
     const [draft] = ok(await as(user.admin, "aal2", [[MEASURE, [TAG]]]));
-    expect(draft).toMatchObject({
-      published: false,
+    expect(draft).toMatchObject({ published: false, published_at: null });
+    expect(await authors(draft.id as string)).toEqual({
       created_by: user.admin,
-      published_at: null,
+      published_by: null,
     });
 
     const visible = async (uid: string, aal: "aal1" | "aal2") =>
@@ -131,29 +160,24 @@ describeDb("admin editors (live database)", () => {
     const [edited] = ok(
       await as(user.admin, "aal2", [
         [
-          "update tariff_measures set rate_value = 7.5, created_by = $2, published_at = now() where id = $1 returning *",
+          "update tariff_measures set rate_value = 7.5, created_by = $2, published_at = now() where id = $1 returning id, published, published_at, rate_value",
           [draft.id, user.member],
         ],
       ]),
     );
-    expect(edited).toMatchObject({
-      rate_value: "7.5000",
-      created_by: user.admin,
-      published_at: null,
-    });
+    expect(edited).toMatchObject({ rate_value: "7.5000", published_at: null });
+    expect((await authors(draft.id as string)).created_by).toBe(user.admin);
 
     const [published] = ok(
       await as(user.admin, "aal2", [
         [
-          "update tariff_measures set published = true where id = $1 returning *",
+          "update tariff_measures set published = true where id = $1 returning id, published, published_at, rate_value",
           [draft.id],
         ],
       ]),
     );
-    expect(published).toMatchObject({
-      published: true,
-      published_by: user.admin,
-    });
+    expect(published).toMatchObject({ published: true });
+    expect((await authors(draft.id as string)).published_by).toBe(user.admin);
     expect(published.published_at).not.toBeNull();
     expect(await visible(user.member, "aal1")).toBe(1);
   });
@@ -163,7 +187,7 @@ describeDb("admin editors (live database)", () => {
       await as(user.admin, "aal2", [
         [MEASURE.replace("'Section 301'", "'Section 232'"), [TAG]],
         [
-          "update tariff_measures set published = true where notes = $1 and authority = 'Section 232' returning *",
+          "update tariff_measures set published = true where notes = $1 and authority = 'Section 232' returning id, published, published_at, rate_value",
           [TAG],
         ],
       ]),
@@ -324,5 +348,76 @@ describeDb("admin editors (live database)", () => {
     expect(await check(user.admin, "aal2")).toBe(true);
     expect(await check(user.admin, "aal1")).toBe(false);
     expect(await check(user.member, "aal2")).toBe(false);
+  });
+
+  it("needs a recent TOTP check, not just an aal2 session", async () => {
+    const check = async (aal: "aal2" | "stale") =>
+      ok(
+        await as(user.admin, aal, [
+          ["select is_platform_admin_mfa() as ok", []],
+        ]),
+      )[0].ok;
+    expect(await check("aal2")).toBe(true);
+    expect(await check("stale")).toBe(false);
+    expect(code(await as(user.admin, "stale", [[MEASURE, [TAG]]]))).toBe(
+      "42501",
+    );
+  });
+
+  it("hides who wrote a row from other users", async () => {
+    const err = await as(user.member, "aal1", [
+      ["select created_by from tariff_measures limit 1", []],
+    ]);
+    expect(code(err)).toBe("42501");
+    const err2 = await as(user.member, "aal1", [
+      ["select * from fee_schedules limit 1", []],
+    ]);
+    expect(code(err2)).toBe("42501");
+  });
+
+  it("counts wrong second-factor codes per admin, recorded only through the function", async () => {
+    const failures = async (uid: string) =>
+      ok(await as(uid, "aal1", [["select mfa_failures_recent() as n", []]]))[0]
+        .n;
+    expect(await failures(user.admin)).toBe(0);
+    for (let i = 0; i < 3; i++) {
+      ok(
+        await as(user.admin, "aal1", [
+          ["select record_mfa_event('verify_failed')", []],
+        ]),
+      );
+    }
+    ok(
+      await as(user.admin, "aal1", [
+        ["select record_mfa_event('verify_ok')", []],
+      ]),
+    );
+    expect(await failures(user.admin)).toBe(3);
+    expect(await failures(user.member)).toBe(0);
+    // Not an admin, a bad kind, or a direct write: refused.
+    expect(
+      code(
+        await as(user.member, "aal1", [
+          ["select record_mfa_event('verify_failed')", []],
+        ]),
+      ),
+    ).toBe("42501");
+    expect(
+      code(
+        await as(user.admin, "aal1", [
+          ["select record_mfa_event('reset')", []],
+        ]),
+      ),
+    ).toBe("23514");
+    expect(
+      code(
+        await as(user.admin, "aal1", [
+          ["delete from admin_mfa_attempts where user_id = auth.uid()", []],
+        ]),
+      ),
+    ).toBe("42501");
+    expect(
+      code(await as(null, "aal1", [["select mfa_failures_recent()", []]])),
+    ).toBe("42501");
   });
 });

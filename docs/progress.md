@@ -283,3 +283,21 @@ marking codes Outdated (above) is still open for the owner.
 - The migration parser now applies `drop policy` in file order. It has its own tests.
 - The isolation suite's seed rows for measures and fees were made valid under the new checks: the
   fee seed has a real fee type and an https source. No assertion changed.
+
+**CD-014 security audit: PASSED, with 2 mediums and 6 lows.**
+- **Fixed:**
+  - per-admin limit on wrong second-factor codes (5 per 15 minutes; Supabase only limits per IP,
+    and every attempt comes from the app server);
+  - authenticator enrolments are logged, and the owner checklist says to enrol straight after
+    being made admin;
+  - the TOTP check must be under 12 hours old;
+  - author columns are hidden from users;
+  - extra grants trimmed;
+  - admin loaders check access themselves;
+  - the e2e database guard can no longer be bypassed with `?host=`.
+- **Accepted, by design:** a published row can be end-dated retroactively (tariffs are sometimes
+  struck down retroactively), once, and it is audited.
+- **Follow-ups:**
+  - CD-051 and the engine read fees and programs with `published = true` and explicit columns
+    (add `active_fees()` / `active_programs()` like `active_measures`);
+  - CD-062 (Resend) emails the admin when an authenticator is enrolled.

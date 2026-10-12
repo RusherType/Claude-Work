@@ -9,11 +9,54 @@
 -- 5. Every change to these tables is written to reference_audit.
 
 -- ============ 1. admin with a second factor ============
+-- The TOTP check must also be recent (12 hours): an aal2 session otherwise stays aal2 through
+-- every refresh, so a stolen refresh token would give lasting write access.
 create or replace function is_platform_admin_mfa() returns boolean
 language sql stable security definer set search_path = '' as $$
   select public.is_platform_admin()
-    and coalesce(auth.jwt() ->> 'aal', '') = 'aal2';
+    and coalesce(auth.jwt() ->> 'aal', '') = 'aal2'
+    and exists (
+      select 1
+      from jsonb_array_elements(
+        case when jsonb_typeof(auth.jwt() -> 'amr') = 'array' then auth.jwt() -> 'amr' else '[]'::jsonb end
+      ) a
+      where a ->> 'method' = 'totp'
+        and (a ->> 'timestamp') ~ '^[0-9]{1,12}$'
+        and (a ->> 'timestamp')::bigint > extract(epoch from now()) - 12 * 3600
+    );
 $$;
+
+-- Second-factor attempts per admin, so wrong codes can be limited per user (Supabase Auth only
+-- limits per IP, and every attempt comes from the app server). No policies: only the two
+-- functions below touch it.
+create table admin_mfa_attempts (
+  id bigint generated always as identity primary key,
+  user_id uuid not null references auth.users on delete cascade,
+  kind text not null check (kind in ('verify_failed', 'verify_ok', 'enrolled')),
+  at timestamptz not null default now()
+);
+create index admin_mfa_attempts_user_at on admin_mfa_attempts (user_id, at);
+alter table admin_mfa_attempts enable row level security;
+
+create or replace function record_mfa_event(p_kind text) returns void
+language plpgsql security definer set search_path = '' as $$
+begin
+  if auth.uid() is null or not public.is_platform_admin() then
+    raise exception 'not_allowed' using errcode = '42501';
+  end if;
+  insert into public.admin_mfa_attempts (user_id, kind) values (auth.uid(), p_kind);
+end $$;
+
+create or replace function mfa_failures_recent() returns integer
+language sql stable security definer set search_path = '' as $$
+  select count(*)::integer from public.admin_mfa_attempts
+  where user_id = auth.uid() and kind = 'verify_failed' and at > now() - interval '15 minutes';
+$$;
+
+revoke all on admin_mfa_attempts from anon, authenticated;
+revoke all on sequence admin_mfa_attempts_id_seq from anon, authenticated;
+revoke execute on function record_mfa_event(text), mfa_failures_recent() from public, anon;
+grant execute on function record_mfa_event(text), mfa_failures_recent() to authenticated;
 
 -- ============ 4. special programs ============
 create table special_programs (
@@ -239,7 +282,19 @@ create policy special_programs_admin_delete on special_programs for delete to au
 
 -- Grants open only what the policies allow: anon sees no rows (no anon policy), signed-in users
 -- read published rows, and only an admin with a second factor writes.
+-- Who created or published a row is visible in the change log (admins only), not to every user:
+-- the author columns are left out of the select grant.
 revoke all on tariff_measures, fee_schedules, special_programs, reference_audit from anon, authenticated;
-grant select on tariff_measures, fee_schedules, special_programs, reference_audit to anon;
-grant select, insert, update, delete on tariff_measures, fee_schedules, special_programs to authenticated;
+revoke all on sequence reference_audit_id_seq from anon, authenticated;
+grant select (id, market, authority, ch99_code, hts_prefixes, excluded_prefixes, origin_countries,
+  rate_type, rate_value, applies_to_modes, exempt_programs, effective_from, effective_to,
+  source_url, notes, published, published_at, created_at)
+  on tariff_measures to anon, authenticated;
+grant select (id, market, fee_type, mode, carrier, pct, flat_amount, min_amount, max_amount,
+  effective_from, effective_to, source_url, notes, published, published_at, created_at)
+  on fee_schedules to anon, authenticated;
+grant select (id, market, symbol, name, countries, mpf_exempt, effective_from, effective_to,
+  source_url, notes, published, published_at, created_at)
+  on special_programs to authenticated;
+grant insert, update, delete on tariff_measures, fee_schedules, special_programs to authenticated;
 grant select on reference_audit to authenticated;

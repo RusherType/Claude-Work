@@ -9,6 +9,28 @@ export type Json =
 export type Database = {
   public: {
     Tables: {
+      admin_mfa_attempts: {
+        Row: {
+          at: string;
+          id: number;
+          kind: string;
+          user_id: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          at?: string;
+          id?: never;
+          kind: string;
+          user_id: string;
+        };
+        Update: {
+          at?: string;
+          id?: never;
+          kind?: string;
+          user_id?: string;
+        };
+        Relationships: [];
+      };
       agent_questions: {
         Row: {
           agent_run_id: string | null;
@@ -1391,6 +1413,10 @@ export type Database = {
           similarity: number;
         }[];
       };
+      mfa_failures_recent: {
+        Args: Record<PropertyKey, never>;
+        Returns: number;
+      };
       product_content_hash: {
         Args: {
           p_currency: string;
@@ -1405,6 +1431,7 @@ export type Database = {
         };
         Returns: string;
       };
+      record_mfa_event: { Args: { p_kind: string }; Returns: undefined };
       revoke_invitation: { Args: { p_invitation: string }; Returns: undefined };
       show_limit: { Args: Record<PropertyKey, never>; Returns: number };
       show_trgm: { Args: { "": string }; Returns: string[] };

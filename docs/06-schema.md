@@ -104,9 +104,15 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   - `facts` is a JSON object of at most 64 KB.
 
 - **Reference data editing (CD-014), for `tariff_measures`, `fee_schedules` and `special_programs`:**
-  - **Who:** only platform admins whose session has a second factor (`is_platform_admin_mfa()`:
-    `is_platform_admin()` and JWT `aal = aal2`) can insert, update or delete. Everyone signed in
-    reads published rows; admins with aal2 also see drafts.
+  - **Who:** only platform admins whose session passed a TOTP check in the last 12 hours
+    (`is_platform_admin_mfa()`: `is_platform_admin()`, JWT `aal = aal2` and a `totp` entry in
+    `amr` under 12 hours old) can insert, update or delete. Everyone signed in reads published
+    rows; admins with a fresh second factor also see drafts.
+  - **Author columns:** `created_by` and `published_by` are not granted to users, so select
+    explicit columns (`select *` fails). Who changed what is in `reference_audit`.
+  - **Second-factor attempts:** `admin_mfa_attempts` is private (RLS on, no policies). Only
+    `record_mfa_event(kind)` and `mfa_failures_recent()` touch it; the app allows 5 wrong codes per
+    admin per 15 minutes.
   - **Publishing (trigger `guard_reference_row`):** rows are drafts until `published`. Publishing
     stamps `published_at` and `published_by`, and `created_by` is always the inserting user.
   - **Published rows:** a signed-in user can never edit, unpublish or delete one. It accepts one

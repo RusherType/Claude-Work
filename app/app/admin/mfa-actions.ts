@@ -16,6 +16,7 @@ export type VerifyState =
   { status: "idle" } | { status: "error"; message: string };
 
 const GENERIC = "Something went wrong. Try again.";
+const MAX_FAILURES = 5;
 
 async function adminClient() {
   const user = await getCurrentUser();
@@ -44,6 +45,7 @@ export async function startEnrollment(): Promise<EnrollState> {
     friendlyName: "ClearDuty admin",
   });
   if (error || !data) return { status: "error", message: GENERIC };
+  await supabase.rpc("record_mfa_event", { p_kind: "enrolled" });
   return {
     status: "enrolled",
     factorId: data.id,
@@ -82,9 +84,22 @@ export async function verifyCode(
     : factors.find((f) => f.factor_type === "totp" && f.status === "verified");
   if (!factor)
     return { status: "error", message: "Set up your authenticator first." };
+  // Supabase Auth limits attempts per IP, and every attempt comes from this server: limit per
+  // admin as well (5 wrong codes in 15 minutes).
+  const recent = await supabase.rpc("mfa_failures_recent");
+  if (recent.error) return { status: "error", message: GENERIC };
+  if (recent.data >= MAX_FAILURES) {
+    return {
+      status: "error",
+      message: "Too many wrong codes. Wait 15 minutes, then try again.",
+    };
+  }
   const { error } = await supabase.auth.mfa.challengeAndVerify({
     factorId: factor.id,
     code: parsed.data.code,
+  });
+  await supabase.rpc("record_mfa_event", {
+    p_kind: error ? "verify_failed" : "verify_ok",
   });
   if (error) {
     return {

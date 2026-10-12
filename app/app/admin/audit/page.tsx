@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
+import { adminClient } from "@/lib/admin/load";
 
 export const metadata: Metadata = { title: "Change log · Admin · ClearDuty" };
 
@@ -10,8 +10,7 @@ const TABLE_LABELS: Record<string, string> = {
 };
 
 export default async function AuditPage() {
-  const supabase = await createClient();
-  if (!supabase) throw new Error("Supabase is not configured");
+  const supabase = await adminClient();
   const { data, error } = await supabase
     .from("reference_audit")
     .select("id, table_name, row_id, action, actor_id, at, new_row")

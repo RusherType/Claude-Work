@@ -59,11 +59,15 @@ session" prompt from `docs/10-master-prompt.md`.
 
 - [ ] **Admin access (CD-014)**, in the staging Supabase project:
   - Authentication → Multi-Factor: enable **TOTP** (app authenticator).
-  - Make yourself a platform admin. Sign in to the app once, then run this in the SQL editor of
-    the staging project only:
+  - Make yourself a platform admin, then **set up your authenticator straight away, in the same
+    sitting**. Until you do, anyone who could sign in as you could register their own
+    authenticator first. Sign in to the app once, then run this in the SQL editor of the staging
+    project only:
     `update profiles set is_platform_admin = true where id = (select id from auth.users where email = 'you@example.com');`
-  - Open `/app/admin` and set up your authenticator app. Admin pages and edits need its code in
-    every new session.
+  - Open `/app/admin` and set up your authenticator app. Admin pages and edits need a fresh code at
+    least every 12 hours.
+  - Authentication → Rate limits: keep the MFA verification limit low. The app also stops after
+    5 wrong codes in 15 minutes per admin.
 
 ## 2. Phase 2: the AI agent
 

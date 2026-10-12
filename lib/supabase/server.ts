@@ -46,5 +46,15 @@ export async function getCurrentUser() {
     email: (data.claims.email as string | undefined) ?? null,
     /** Authenticator assurance level: "aal2" after a second factor in this session. */
     aal: (data.claims.aal as string | undefined) ?? "aal1",
+    /** When the session last passed a TOTP check (seconds since epoch), if ever. */
+    totpAt: latestTotp(data.claims.amr),
   };
+}
+
+function latestTotp(amr: unknown): number | null {
+  if (!Array.isArray(amr)) return null;
+  const times = amr
+    .filter((a) => a?.method === "totp" && Number.isInteger(a?.timestamp))
+    .map((a) => a.timestamp as number);
+  return times.length ? Math.max(...times) : null;
 }

@@ -8,11 +8,22 @@ import { hasSupabase, signInFromSignInPage, uniqueEmail } from "./helpers";
 const dbUrl = process.env.E2E_DATABASE_URL;
 
 async function makeAdmin(email: string) {
-  const host = new URL(dbUrl!).hostname;
-  if (!["127.0.0.1", "localhost", "::1"].includes(host)) {
-    throw new Error("E2E_DATABASE_URL must be a local database");
+  // Build the connection from checked parts: pg also reads ?host= from a URL, which could
+  // point somewhere else than the hostname checked here.
+  const url = new URL(dbUrl!);
+  if (
+    !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) ||
+    url.search !== ""
+  ) {
+    throw new Error("E2E_DATABASE_URL must be a plain local database URL");
   }
-  const db = new Client({ connectionString: dbUrl });
+  const db = new Client({
+    host: url.hostname.replace(/^\[|\]$/g, ""),
+    port: Number(url.port || 5432),
+    user: decodeURIComponent(url.username),
+    password: decodeURIComponent(url.password),
+    database: url.pathname.slice(1),
+  });
   await db.connect();
   try {
     await db.query(

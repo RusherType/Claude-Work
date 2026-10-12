@@ -36,8 +36,11 @@ const ADMIN_EDITABLE = new Set([
   "special_programs",
 ]);
 const PER_USER = new Set(["profiles"]);
+// Tables only SECURITY DEFINER functions touch: RLS on and no policies at all.
+const PRIVATE = new Set(["admin_mfa_attempts"]);
 const tenantTables = [...schema.tables.keys()].filter(
-  (t) => !SHARED.has(t) && !PER_USER.has(t) && t !== "workspaces",
+  (t) =>
+    !SHARED.has(t) && !PER_USER.has(t) && !PRIVATE.has(t) && t !== "workspaces",
 );
 const policiesOn = (tables: Iterable<string>) => {
   const set = new Set(tables);
@@ -116,6 +119,10 @@ describe("migrations", () => {
       )
       .map(label);
     expect(writable).toEqual([]);
+  });
+
+  it("gives private tables no policies at all", () => {
+    expect(policiesOn(PRIVATE).map(label)).toEqual([]);
   });
 
   it("limits profiles to their own user", () => {
