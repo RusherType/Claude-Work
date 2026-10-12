@@ -258,3 +258,28 @@ screen in under 60 s. Rounds 3–4 aligned the Zod and database rules for blank 
 characters; a database test now sends every row the schema accepts through `import_products`.
 Totals: 302 unit tests, 245 database tests. The decision on value, weight and image changes
 marking codes Outdated (above) is still open for the owner.
+
+## 2026-10-12 (CD-014)
+
+**CD-014 (admin editors), plan recorded per standing approval:**
+- **Migration `0004_admin.sql`:**
+  - `is_platform_admin_mfa()` (admin with an aal2 session) guards every write to measures, fees
+    and the new `special_programs`;
+  - rows are drafts until published, and published rows are permanent apart from one end date
+    (`guard_reference_row`);
+  - `reference_audit` records every change;
+  - value checks match the landed-cost engine;
+  - `tariff_measures.exempt_programs`, where null means unchecked.
+- **App:**
+  - `/app/admin` returns 404 for non-admins and shows a TOTP set-up or verify gate until the
+    session is aal2; that step runs as server actions, because the cookies are HTTP-only;
+  - one generic list and editor serve all three tables, with publish, end date, delete draft and
+    a change log.
+- **Supabase:** TOTP MFA is enabled in `supabase/config.toml`.
+
+**Changes to existing tests, deliberate and flagged for the owner:**
+- The static RLS guard now also allows admin writes on `fee_schedules` and `special_programs`, and
+  requires `is_platform_admin_mfa()`, which is stricter than the old `is_platform_admin()`.
+- The migration parser now applies `drop policy` in file order. It has its own tests.
+- The isolation suite's seed rows for measures and fees were made valid under the new checks: the
+  fee seed has a real fee type and an https source. No assertion changed.

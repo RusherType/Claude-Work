@@ -181,12 +181,21 @@ export function parseMigrations(files: string[]): Schema {
     );
   }
 
-  const policies: Policy[] = [];
+  // Policies, created and dropped in file order.
+  let policies: Policy[] = [];
   const policyRe = new RegExp(
-    String.raw`\bcreate\s+policy\s+(${IDENT})\s+on\s+(${QUALIFIED})([^;]*);`,
+    String.raw`\bcreate\s+policy\s+(${IDENT})\s+on\s+(${QUALIFIED})([^;]*);|\bdrop\s+policy\s+(?:if\s+exists\s+)?(${IDENT})\s+on\s+(${QUALIFIED})`,
     "gi",
   );
   for (const m of sql.matchAll(policyRe)) {
+    if (m[4] !== undefined) {
+      const name = normalizeIdent(m[4]);
+      const table = normalizeIdent(m[5]);
+      policies = policies.filter(
+        (p) => !(p.name === name && p.table === table),
+      );
+      continue;
+    }
     const rest = m[3];
     const cmd =
       /^\s*(?:as\s+\w+\s+)?for\s+(all|select|insert|update|delete)\b/i.exec(

@@ -57,6 +57,14 @@ session" prompt from `docs/10-master-prompt.md`.
     the app.
   - Cloud env and Vercel: `NEXT_PUBLIC_AUTH_GOOGLE_ENABLED=true`.
 
+- [ ] **Admin access (CD-014)**, in the staging Supabase project:
+  - Authentication → Multi-Factor: enable **TOTP** (app authenticator).
+  - Make yourself a platform admin. Sign in to the app once, then run this in the SQL editor of
+    the staging project only:
+    `update profiles set is_platform_admin = true where id = (select id from auth.users where email = 'you@example.com');`
+  - Open `/app/admin` and set up your authenticator app. Admin pages and edits need its code in
+    every new session.
+
 ## 2. Phase 2: the AI agent
 
 - [ ] **Anthropic** (console.anthropic.com): create an API key for the app, and add credits

@@ -44,5 +44,7 @@ export async function getCurrentUser() {
   return {
     id: data.claims.sub,
     email: (data.claims.email as string | undefined) ?? null,
+    /** Authenticator assurance level: "aal2" after a second factor in this session. */
+    aal: (data.claims.aal as string | undefined) ?? "aal1",
   };
 }

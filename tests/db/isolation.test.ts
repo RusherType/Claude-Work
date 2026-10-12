@@ -198,8 +198,8 @@ const SHARED_SEED: Record<string, string> = {
   tariff_lines: `insert into tariff_lines (revision_id, code, indent, description, is_leaf) values ('00000000-0000-4000-8000-000000000001', '6109100012', 2, 'iso-test', true)`,
   rulings: `insert into rulings (number) values ('ISO-TEST')`,
   ruling_chunks: `insert into ruling_chunks (ruling_number, chunk) values ('ISO-TEST', 'iso-test')`,
-  tariff_measures: `insert into tariff_measures (market, authority, hts_prefixes, origin_countries, rate_value, effective_from, source_url, published, notes) values ('US', 'iso-test', '{61}', '{CN}', 25, '2026-01-01', 'https://example.com', true, 'iso-test')`,
-  fee_schedules: `insert into fee_schedules (market, fee_type, effective_from, source_url) values ('US', 'iso-test', '2026-01-01', 'iso-test')`,
+  tariff_measures: `insert into tariff_measures (market, authority, hts_prefixes, origin_countries, rate_type, rate_value, effective_from, source_url, published, notes) values ('US', 'iso-test', '{61}', '{CN}', 'ad_valorem', 25, '2026-01-01', 'https://example.com', true, 'iso-test')`,
+  fee_schedules: `insert into fee_schedules (market, fee_type, pct, effective_from, source_url, published, notes) values ('US', 'hmf', 0.125, '2026-01-01', 'https://example.com/iso-test', true, 'iso-test')`,
 };
 const SHARED_UPDATE: Record<string, string> = {
   tariff_revisions: "label = 'x'",
@@ -207,7 +207,7 @@ const SHARED_UPDATE: Record<string, string> = {
   rulings: "subject = 'x'",
   ruling_chunks: "chunk = 'x'",
   tariff_measures: "rate_value = 0",
-  fee_schedules: "fee_type = 'x'",
+  fee_schedules: "flat_amount = 999",
 };
 
 let db: Client;
@@ -381,7 +381,7 @@ suite("tenant isolation (live database)", () => {
       );
       await db.query("delete from rulings where number = 'ISO-TEST'");
       await db.query("delete from tariff_measures where notes = 'iso-test'");
-      await db.query("delete from fee_schedules where source_url = 'iso-test'");
+      await db.query("delete from fee_schedules where notes = 'iso-test'");
     } finally {
       await db.end();
     }

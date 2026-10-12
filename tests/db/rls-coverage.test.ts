@@ -26,6 +26,14 @@ const SHARED = new Set([
   "ruling_chunks",
   "tariff_measures",
   "fee_schedules",
+  "special_programs",
+  "reference_audit",
+]);
+// Reference data platform admins edit in Admin (CD-014), only with a second factor.
+const ADMIN_EDITABLE = new Set([
+  "tariff_measures",
+  "fee_schedules",
+  "special_programs",
 ]);
 const PER_USER = new Set(["profiles"]);
 const tenantTables = [...schema.tables.keys()].filter(
@@ -95,15 +103,15 @@ describe("migrations", () => {
     expect(unscoped(policiesOn(["workspaces"]), WORKSPACE_SCOPE)).toEqual([]);
   });
 
-  it("keeps shared reference data read-only to users", () => {
+  it("keeps shared reference data read-only to users, except admins with a second factor", () => {
     const writable = policiesOn(SHARED)
       .filter((p) => p.command !== "select")
       .filter(
         (p) =>
-          p.table !== "tariff_measures" ||
+          !ADMIN_EDITABLE.has(p.table) ||
           expressions(p).length === 0 ||
           expressions(p).some(
-            (e) => !/^is_platform_admin\(\)$/i.test(stripOuterParens(e)),
+            (e) => !/^is_platform_admin_mfa\(\)$/i.test(stripOuterParens(e)),
           ),
       )
       .map(label);

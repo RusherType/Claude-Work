@@ -22,7 +22,7 @@ Every row of customer data belongs to one workspace, and Postgres Row Level Secu
 - HTTP-only, Secure, SameSite=Lax cookies via `@supabase/ssr`; 1-hour access tokens.
 - Shopify OAuth with minimum scope `read_products`; verify every webhook HMAC and embedded-app session token.
 - API keys (Pro): SHA-256 hashes only, shown once, scoped, revocable.
-- Platform admin behind `is_platform_admin` plus required 2FA.
+- Platform admin behind `is_platform_admin` plus required 2FA: Admin pages and every write to measures, fees and special programs need an aal2 session (TOTP), enforced in RLS by `is_platform_admin_mfa()`. Published reference rows are permanent apart from one end date, and every change is in `reference_audit`.
 
 ## Data isolation
 

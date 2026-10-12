@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { isPlatformAdmin } from "@/lib/admin/access";
 import { getWorkspaceContext } from "@/lib/workspace";
 import { signOut } from "./actions";
 import { switchWorkspace } from "./workspace-actions";
@@ -8,6 +9,7 @@ import { switchWorkspace } from "./workspace-actions";
 export default async function AppLayout({ children }: LayoutProps<"/app">) {
   const ctx = await getWorkspaceContext();
   if (!ctx) redirect("/sign-in?next=/app");
+  const admin = await isPlatformAdmin(ctx.user.id);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -47,6 +49,11 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
                 Team
               </Link>
             </>
+          )}
+          {admin && (
+            <Link href="/app/admin" className="text-sm">
+              Admin
+            </Link>
           )}
         </div>
         <div className="flex items-center gap-3 text-sm">

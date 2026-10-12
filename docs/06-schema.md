@@ -46,15 +46,12 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   `tariff_measures.rate_value` 25 means 25%. A `flat_per_item` measure stores US dollars per item.
 - `tariff_measures.hts_prefixes` and `excluded_prefixes` hold digits only, matching the start of
   the 10-digit code.
-- **Planned for CD-014/CD-015 (not in the schema yet):** the landed-cost engine already takes
-  special-program eligibility and per-measure program exemptions; until the tables below exist,
-  CD-051 passes neither, so multilateral program claims (A, P, S, ...) go to review and lines
-  claiming a program that a measure covers go to review.
-  - `special_programs` (shared): `symbol` as written in the Special column (`A`, `A+`, `S`),
-    `countries char(2)[]`, `mpf_exempt boolean`, `effective_from`, `effective_to`, `source_url`
-    (HTSUS General Notes). Published by an admin like measures.
-  - `tariff_measures.exempt_programs text[]`: null means nobody has checked (lines claiming a
-    program go to review), `'{}'` means no program is exempt.
+- **Special programs and exemptions (CD-014):**
+  - `special_programs`: who may claim each Special-column symbol (`A`, `A+`, `S`, `AU`), its
+    countries, and whether qualifying goods skip the MPF.
+  - `tariff_measures.exempt_programs`: null means nobody has checked, so the engine sends lines
+    claiming a program to review; `'{}'` means no program is exempt.
+  - Until rows are published, multilateral program claims (A, P, S, ...) go to review.
 - Code that reads numeric columns for the landed-cost engine selects them as text
   (`rate_value::text`). PostgREST returns numeric as a JSON number, which the engine rejects.
 - Embeddings are 1024-dimension; change the column type if the chosen Voyage model differs.
@@ -105,6 +102,24 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   - at most 250 tags of up to 100 characters, and at most 250 https image links of up to 2,000
     characters, with no empty elements (`all_match`);
   - `facts` is a JSON object of at most 64 KB.
+
+- **Reference data editing (CD-014), for `tariff_measures`, `fee_schedules` and `special_programs`:**
+  - **Who:** only platform admins whose session has a second factor (`is_platform_admin_mfa()`:
+    `is_platform_admin()` and JWT `aal = aal2`) can insert, update or delete. Everyone signed in
+    reads published rows; admins with aal2 also see drafts.
+  - **Publishing (trigger `guard_reference_row`):** rows are drafts until `published`. Publishing
+    stamps `published_at` and `published_by`, and `created_by` is always the inserting user.
+  - **Published rows:** a signed-in user can never edit, unpublish or delete one. It accepts one
+    end date (`effective_to`, not before its start). Server jobs with no signed-in user are not
+    limited, like `protect_product_records`.
+  - **Audit:** every insert, update and delete is written to `reference_audit` (table, row id,
+    action, actor, old and new row), readable only by admins with aal2.
+  - **Value checks match the landed-cost engine:**
+    - digits-only HTS prefixes (2–10 digits);
+    - ISO or `**` origins;
+    - known modes, fee types and rate types;
+    - a percentage or flat amount on every fee, with the informal limit in `flat_amount`;
+    - min ≤ max, end ≥ start, and https sources.
 
 ## Tests
 

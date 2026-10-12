@@ -95,6 +95,28 @@ describe("parseMigrations policies", () => {
   });
 });
 
+describe("parseMigrations drop policy", () => {
+  it("removes a dropped policy in file order, and a later create adds it back", () => {
+    const schema = parseMigrations([
+      `create table t (id int);
+       create policy p on t for all using (true);
+       create policy q on public.t for select using (true);`,
+      `drop policy p on t; drop policy if exists "q" on public.t;
+       create policy q on t for select using (is_member(workspace_id));`,
+    ]);
+    expect(schema.policies.map((p) => [p.name, p.using])).toEqual([
+      ["q", "is_member(workspace_id)"],
+    ]);
+  });
+
+  it("only drops the policy on the named table", () => {
+    const schema = parseMigrations([
+      `create policy p on a using (true); create policy p on b using (true); drop policy p on a;`,
+    ]);
+    expect(schema.policies.map((p) => p.table)).toEqual(["b"]);
+  });
+});
+
 describe("expandLoops keeps the rest of the block", () => {
   it("sees statements after a loop and in a second loop", () => {
     const s = parseMigrations([

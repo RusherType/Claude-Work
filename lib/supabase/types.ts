@@ -510,6 +510,8 @@ export type Database = {
       fee_schedules: {
         Row: {
           carrier: string | null;
+          created_at: string;
+          created_by: string | null;
           effective_from: string;
           effective_to: string | null;
           fee_type: string;
@@ -519,12 +521,18 @@ export type Database = {
           max_amount: number | null;
           min_amount: number | null;
           mode: string | null;
+          notes: string | null;
           pct: number | null;
+          published: boolean;
+          published_at: string | null;
+          published_by: string | null;
           source_url: string | null;
         };
         ComputedFields: never;
         Insert: {
           carrier?: string | null;
+          created_at?: string;
+          created_by?: string | null;
           effective_from: string;
           effective_to?: string | null;
           fee_type: string;
@@ -534,11 +542,17 @@ export type Database = {
           max_amount?: number | null;
           min_amount?: number | null;
           mode?: string | null;
+          notes?: string | null;
           pct?: number | null;
+          published?: boolean;
+          published_at?: string | null;
+          published_by?: string | null;
           source_url?: string | null;
         };
         Update: {
           carrier?: string | null;
+          created_at?: string;
+          created_by?: string | null;
           effective_from?: string;
           effective_to?: string | null;
           fee_type?: string;
@@ -548,7 +562,11 @@ export type Database = {
           max_amount?: number | null;
           min_amount?: number | null;
           mode?: string | null;
+          notes?: string | null;
           pct?: number | null;
+          published?: boolean;
+          published_at?: string | null;
+          published_by?: string | null;
           source_url?: string | null;
         };
         Relationships: [];
@@ -875,6 +893,40 @@ export type Database = {
           },
         ];
       };
+      reference_audit: {
+        Row: {
+          action: string;
+          actor_id: string | null;
+          at: string;
+          id: number;
+          new_row: Json | null;
+          old_row: Json | null;
+          row_id: string;
+          table_name: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          action: string;
+          actor_id?: string | null;
+          at?: string;
+          id?: never;
+          new_row?: Json | null;
+          old_row?: Json | null;
+          row_id: string;
+          table_name: string;
+        };
+        Update: {
+          action?: string;
+          actor_id?: string | null;
+          at?: string;
+          id?: never;
+          new_row?: Json | null;
+          old_row?: Json | null;
+          row_id?: string;
+          table_name?: string;
+        };
+        Relationships: [];
+      };
       ruling_chunks: {
         Row: {
           chunk: string;
@@ -936,6 +988,61 @@ export type Database = {
           status?: string | null;
           subject?: string | null;
           url?: string | null;
+        };
+        Relationships: [];
+      };
+      special_programs: {
+        Row: {
+          countries: string[];
+          created_at: string;
+          created_by: string | null;
+          effective_from: string;
+          effective_to: string | null;
+          id: string;
+          market: Database["public"]["Enums"]["market_code"];
+          mpf_exempt: boolean;
+          name: string;
+          notes: string | null;
+          published: boolean;
+          published_at: string | null;
+          published_by: string | null;
+          source_url: string;
+          symbol: string;
+        };
+        ComputedFields: never;
+        Insert: {
+          countries: string[];
+          created_at?: string;
+          created_by?: string | null;
+          effective_from: string;
+          effective_to?: string | null;
+          id?: string;
+          market?: Database["public"]["Enums"]["market_code"];
+          mpf_exempt: boolean;
+          name: string;
+          notes?: string | null;
+          published?: boolean;
+          published_at?: string | null;
+          published_by?: string | null;
+          source_url: string;
+          symbol: string;
+        };
+        Update: {
+          countries?: string[];
+          created_at?: string;
+          created_by?: string | null;
+          effective_from?: string;
+          effective_to?: string | null;
+          id?: string;
+          market?: Database["public"]["Enums"]["market_code"];
+          mpf_exempt?: boolean;
+          name?: string;
+          notes?: string | null;
+          published?: boolean;
+          published_at?: string | null;
+          published_by?: string | null;
+          source_url?: string;
+          symbol?: string;
         };
         Relationships: [];
       };
@@ -1043,57 +1150,69 @@ export type Database = {
       };
       tariff_measures: {
         Row: {
-          applies_to_modes: string[] | null;
+          applies_to_modes: string[];
           authority: string;
           ch99_code: string | null;
+          created_at: string;
           created_by: string | null;
           effective_from: string;
           effective_to: string | null;
-          excluded_prefixes: string[] | null;
+          excluded_prefixes: string[];
+          exempt_programs: string[] | null;
           hts_prefixes: string[];
           id: string;
           market: Database["public"]["Enums"]["market_code"];
           notes: string | null;
           origin_countries: string[];
-          published: boolean | null;
-          rate_type: string | null;
+          published: boolean;
+          published_at: string | null;
+          published_by: string | null;
+          rate_type: string;
           rate_value: number;
           source_url: string;
         };
         ComputedFields: never;
         Insert: {
-          applies_to_modes?: string[] | null;
+          applies_to_modes?: string[];
           authority: string;
           ch99_code?: string | null;
+          created_at?: string;
           created_by?: string | null;
           effective_from: string;
           effective_to?: string | null;
-          excluded_prefixes?: string[] | null;
+          excluded_prefixes?: string[];
+          exempt_programs?: string[] | null;
           hts_prefixes: string[];
           id?: string;
           market: Database["public"]["Enums"]["market_code"];
           notes?: string | null;
           origin_countries: string[];
-          published?: boolean | null;
-          rate_type?: string | null;
+          published?: boolean;
+          published_at?: string | null;
+          published_by?: string | null;
+          rate_type: string;
           rate_value: number;
           source_url: string;
         };
         Update: {
-          applies_to_modes?: string[] | null;
+          applies_to_modes?: string[];
           authority?: string;
           ch99_code?: string | null;
+          created_at?: string;
           created_by?: string | null;
           effective_from?: string;
           effective_to?: string | null;
-          excluded_prefixes?: string[] | null;
+          excluded_prefixes?: string[];
+          exempt_programs?: string[] | null;
           hts_prefixes?: string[];
           id?: string;
           market?: Database["public"]["Enums"]["market_code"];
           notes?: string | null;
           origin_countries?: string[];
-          published?: boolean | null;
-          rate_type?: string | null;
+          published?: boolean;
+          published_at?: string | null;
+          published_by?: string | null;
+          rate_type?: string;
           rate_value?: number;
           source_url?: string;
         };
@@ -1178,20 +1297,24 @@ export type Database = {
           p_origin: string;
         };
         Returns: {
-          applies_to_modes: string[] | null;
+          applies_to_modes: string[];
           authority: string;
           ch99_code: string | null;
+          created_at: string;
           created_by: string | null;
           effective_from: string;
           effective_to: string | null;
-          excluded_prefixes: string[] | null;
+          excluded_prefixes: string[];
+          exempt_programs: string[] | null;
           hts_prefixes: string[];
           id: string;
           market: Database["public"]["Enums"]["market_code"];
           notes: string | null;
           origin_countries: string[];
-          published: boolean | null;
-          rate_type: string | null;
+          published: boolean;
+          published_at: string | null;
+          published_by: string | null;
+          rate_type: string;
           rate_value: number;
           source_url: string;
         }[];
@@ -1245,6 +1368,10 @@ export type Database = {
       is_member: { Args: { ws: string }; Returns: boolean };
       is_not_blank: { Args: { p_value: string }; Returns: boolean };
       is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
+      is_platform_admin_mfa: {
+        Args: Record<PropertyKey, never>;
+        Returns: boolean;
+      };
       match_rulings: {
         Args: { hts_prefix?: string; k?: number; query_embedding: string };
         Returns: {
