@@ -94,9 +94,21 @@ test.describe("admin editors", () => {
       .getByRole("textbox", { name: "Source (required)" })
       .fill("https://www.cbp.gov/trade/basic-import-export");
     await page.getByRole("button", { name: "Save draft" }).click();
-    await expect(
-      page.getByRole("heading", { name: "Draft fee" }),
-    ).toBeVisible();
+    const draftHeading = page.getByRole("heading", { name: "Draft fee" });
+    await draftHeading
+      .or(page.getByText("Fix the highlighted fields."))
+      .or(page.locator("form p[role=alert]"))
+      .first()
+      .waitFor();
+    if (!(await draftHeading.isVisible())) {
+      // Say why the save failed, so a CI failure is diagnosable from the log.
+      console.log(
+        "Save failed at",
+        page.url(),
+        await page.locator("form").innerText(),
+      );
+    }
+    await expect(draftHeading).toBeVisible();
 
     // Publish (with confirmation), then end-date it.
     page.once("dialog", (d) => d.accept());
