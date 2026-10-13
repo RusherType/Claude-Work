@@ -34,7 +34,6 @@ grant select on catalog_items to authenticated;
 create index products_title_trgm on products using gin (title gin_trgm_ops);
 create index products_sku_trgm on products using gin (sku gin_trgm_ops);
 create index products_workspace_created on products (workspace_id, created_at desc);
-create index classifications_current_product on classifications (product_id) where is_current;
 
 -- Filter choices for the catalog: how many products per status, origin and chapter.
 create or replace function catalog_facets(p_workspace_id uuid)

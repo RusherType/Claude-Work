@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   formatHtsCode,
+  pageOverflow,
   listingHref,
   parseListing,
   searchFilter,
@@ -58,7 +59,14 @@ describe("parseListing", () => {
 
 describe("search", () => {
   it("removes characters that would change the filter", () => {
-    expect(searchTerm('mug),sku.eq.(x" 100%_*\\')).toBe("mug sku.eq. x 100");
+    expect(searchTerm('mug),sku.eq.(x" 100*\\')).toBe("mug sku.eq. x 100");
+  });
+
+  it("keeps apostrophes, underscores and other ordinary characters", () => {
+    expect(searchTerm("men's")).toBe("men's");
+    expect(searchTerm("TS_BLK_M")).toBe("TS_BLK_M");
+    expect(searchTerm("100% cotton: tee")).toBe("100% cotton: tee");
+    expect(searchFilter("men's")).toBe("title.ilike.*men's*,sku.ilike.*men's*");
   });
 
   it("searches title and SKU, and codes when the text is a code", () => {
@@ -93,5 +101,15 @@ describe("formatHtsCode", () => {
   it("formats 10-digit codes as 6109.10.0012", () => {
     expect(formatHtsCode("6109100012")).toBe("6109.10.0012");
     expect(formatHtsCode("6109")).toBe("6109");
+  });
+});
+
+describe("pageOverflow", () => {
+  it("sends pages past the end to the last page", () => {
+    expect(pageOverflow(1, 0)).toBeNull();
+    expect(pageOverflow(2, 50)).toBe(1);
+    expect(pageOverflow(2, 51)).toBeNull();
+    expect(pageOverflow(999, 120)).toBe(3);
+    expect(pageOverflow(3, 120)).toBeNull();
   });
 });

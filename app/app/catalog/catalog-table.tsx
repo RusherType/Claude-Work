@@ -16,6 +16,7 @@ export type CatalogRow = {
   code: string | null;
   status: Exclude<CatalogStatus, "unclassified"> | null;
   checked_at: string | null;
+  confidence: number | null;
 };
 
 const statusOf = (r: CatalogRow): CatalogStatus => r.status ?? "unclassified";
@@ -65,6 +66,10 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
         aria-label="Bulk actions"
         role="group"
       >
+        <label className="flex items-center gap-2">
+          <input type="checkbox" checked={allSelected} onChange={toggleAll} />
+          Select all on this page
+        </label>
         <span role="status">
           {chosen.length === 0
             ? "Select products for bulk actions."
@@ -98,12 +103,7 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
           <thead className="text-muted text-left text-xs">
             <tr>
               <th scope="col" className="w-10 px-3 py-2">
-                <input
-                  type="checkbox"
-                  aria-label="Select all products on this page"
-                  checked={allSelected}
-                  onChange={toggleAll}
-                />
+                <span className="sr-only">Select</span>
               </th>
               <th scope="col" className="px-3 py-2 font-medium">
                 Product
@@ -144,11 +144,12 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">{r.sku ?? "—"}</td>
                 <td className="px-3 py-2">{r.origin_country ?? "—"}</td>
-                <td className="px-3 py-2 font-mono text-xs whitespace-nowrap">
-                  {r.code ? formatHtsCode(r.code) : "—"}
+                <td className="px-3 py-2 whitespace-nowrap">
+                  <HtsCode code={r.code} />
                 </td>
                 <td className="px-3 py-2">
                   <StatusChip status={statusOf(r)} />
+                  <Confidence row={r} />
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">
                   {day(r.checked_at)}
@@ -184,7 +185,10 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
                   .filter(Boolean)
                   .join(" · ")}
               </span>
-              <StatusChip status={statusOf(r)} />
+              <span className="flex flex-wrap items-center gap-2">
+                <StatusChip status={statusOf(r)} />
+                <Confidence row={r} />
+              </span>
             </div>
           </li>
         ))}
@@ -210,5 +214,43 @@ function Thumb({ url }: { url: string | null }) {
       referrerPolicy="no-referrer"
       className="size-10 shrink-0 rounded object-cover"
     />
+  );
+}
+
+/** A suggested code shows how sure the agent is (docs/04-frontend.md principle 1). */
+function Confidence({ row }: { row: CatalogRow }) {
+  if (row.status !== "suggested" || row.confidence === null) return null;
+  return (
+    <span className="text-muted ml-1 text-xs">
+      {Math.round(row.confidence * 100)}% sure
+    </span>
+  );
+}
+
+/** HTS code as 6109.10.0012 in mono, with a copy button. */
+function HtsCode({ code }: { code: string | null }) {
+  const [copied, setCopied] = useState(false);
+  if (!code) return <span className="font-mono text-xs">—</span>;
+  const text = formatHtsCode(code);
+  return (
+    <span className="inline-flex items-center gap-1">
+      <span className="font-mono text-xs">{text}</span>
+      <button
+        type="button"
+        className="text-brand text-xs underline"
+        aria-label={`Copy HTS code ${text}`}
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(text);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch {
+            // Clipboard blocked: the code stays visible to copy by hand.
+          }
+        }}
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </span>
   );
 }

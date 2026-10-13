@@ -88,6 +88,10 @@ test.describe("catalog", () => {
       page.getByText("No products match these filters."),
     ).toBeVisible();
     await page.getByRole("link", { name: "Clear filters" }).click();
+    await expect(page).toHaveURL(/\/app\/catalog$/);
+    // The filter form shows the cleared filters, not the previous ones.
+    await expect(page.getByLabel("Search")).toHaveValue("");
+    await expect(page.getByLabel("Origin")).toHaveValue("");
     await page.getByLabel("Status").selectOption("unclassified");
     await page.getByRole("button", { name: "Apply" }).click();
     await expect(

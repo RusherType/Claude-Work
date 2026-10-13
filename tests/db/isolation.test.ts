@@ -397,6 +397,20 @@ suite("tenant isolation (live database)", () => {
     expect(rows.map((r) => r.table_name).sort()).toEqual(
       [...TENANT_TABLES, ...TENANT_VIEWS].sort(),
     );
+    // Views skip the write tests, so only real security-invoker views may be listed as views.
+    const views = await db.query(
+      `select c.relname, c.relkind, coalesce(c.reloptions, '{}') as options
+       from pg_class c join pg_namespace n on n.oid = c.relnamespace
+       where n.nspname = 'public' and c.relname = any($1)`,
+      [TENANT_VIEWS],
+    );
+    expect(views.rows.map((r) => r.relname).sort()).toEqual(
+      [...TENANT_VIEWS].sort(),
+    );
+    for (const v of views.rows) {
+      expect(v.relkind, v.relname).toBe("v");
+      expect(v.options, v.relname).toContain("security_invoker=true");
+    }
     expect(Object.keys(UPDATE_SET).sort()).toEqual([...TENANT_TABLES].sort());
     expect(Object.keys(MAY_INSERT).sort()).toEqual([...TENANT_TABLES].sort());
   });

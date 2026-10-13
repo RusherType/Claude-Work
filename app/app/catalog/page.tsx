@@ -5,6 +5,8 @@ import { COUNTRIES } from "@/lib/countries";
 import {
   listingHref,
   PAGE_SIZE,
+  pageCount,
+  pageOverflow,
   parseListing,
   searchFilter,
   STATUS_LABELS,
@@ -32,7 +34,7 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
   let query = supabase
     .from("catalog_items")
     .select(
-      "id, title, sku, origin_country, image_url, code, status, checked_at",
+      "id, title, sku, origin_country, image_url, code, status, confidence, checked_at",
       { count: "exact" },
     )
     .eq("workspace_id", workspace.id);
@@ -52,7 +54,13 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
       .range(from, from + PAGE_SIZE - 1),
     supabase.rpc("catalog_facets", { p_workspace_id: workspace.id }),
   ]);
+  // A page past the end (stale or hand-edited link): PostgREST answers 416 (PGRST103), or an
+  // empty page when the offset equals the total. Send the user to the last page instead.
+  if (rows.error?.code === "PGRST103")
+    redirect(listingHref(listing, { page: 1 }));
   if (rows.error || facets.error) throw new Error("Could not load the catalog");
+  const overflow = pageOverflow(listing.page, rows.count ?? 0);
+  if (overflow !== null) redirect(listingHref(listing, { page: overflow }));
 
   const total = rows.count ?? 0;
   const counts = (facet: string) =>
@@ -63,7 +71,7 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
   const filtered = Boolean(
     listing.q || listing.status || listing.origin || listing.chapter,
   );
-  const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const pages = pageCount(total);
 
   if (totalProducts === 0) {
     return (
@@ -94,7 +102,10 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
         </Link>
       </div>
 
+      {/* Keyed by the filters: a link (e.g. Clear filters) keeps this form mounted, and inputs only
+          take their defaultValue on mount, so remount it whenever the filters change. */}
       <form
+        key={listingHref(listing, { page: 1 })}
         method="get"
         className="flex flex-wrap items-end gap-3"
         role="search"
@@ -141,7 +152,7 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
           value={listing.chapter}
           options={counts("chapter").map(([ch, n]) => [ch, `Chapter ${ch}`, n])}
         />
-        <button type="submit" className={primary}>
+        <button type="submit" className={secondary}>
           Apply
         </button>
         {filtered && (
@@ -213,6 +224,10 @@ function FilterSelect({
       </label>
       <select id={id} name={name} defaultValue={value ?? ""} className={field}>
         <option value="">All</option>
+        {/* A filter with no products left still shows as chosen, not as "All". */}
+        {value && !options.some(([v]) => v === value) && (
+          <option value={value}>{value} (0)</option>
+        )}
         {options.map(([v, text, n]) => (
           <option key={v} value={v}>
             {text} ({n.toLocaleString()})

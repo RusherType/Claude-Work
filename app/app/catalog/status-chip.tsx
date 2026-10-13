@@ -10,11 +10,15 @@ const STYLE: Record<CatalogStatus, string> = {
   broker_verified: "border-confirmed text-confirmed",
   outdated: "border-risk text-risk",
 };
-const ICON: Partial<Record<CatalogStatus, string>> = {
+const ICON: Record<CatalogStatus, string> = {
+  unclassified: "–",
+  queued: "…",
+  needs_answer: "?",
+  in_review: "◔",
+  suggested: "◇",
   confirmed: "✓",
   broker_verified: "✓✓",
   outdated: "!",
-  needs_answer: "?",
 };
 
 /** Status in words with an icon, never by colour alone (docs/04-frontend.md). */
@@ -23,7 +27,7 @@ export function StatusChip({ status }: { status: CatalogStatus }) {
     <span
       className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium whitespace-nowrap ${STYLE[status]}`}
     >
-      {ICON[status] && <span aria-hidden="true">{ICON[status]}</span>}
+      <span aria-hidden="true">{ICON[status]}</span>
       {STATUS_LABELS[status]}
     </span>
   );

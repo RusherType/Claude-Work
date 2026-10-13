@@ -63,12 +63,13 @@ export function parseListing(
 }
 
 /**
- * Search text made safe for a PostgREST `or=(...)` filter: the characters that structure the
- * filter (commas, parentheses, quotes, backslash) and LIKE wildcards are removed.
+ * Search text made safe for a PostgREST `or=(...)` filter: only the characters that structure the
+ * filter (commas, parentheses, double quotes, backslash) and its `*` wildcard are removed. LIKE
+ * wildcards (`%`, `_`) stay: at worst they match a little more.
  */
 export function searchTerm(q: string): string {
   return q
-    .replace(/[,()"'\\%*_:]/g, " ")
+    .replace(/[,()"\\*]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -104,4 +105,12 @@ export function formatHtsCode(code: string): string {
   return /^\d{10}$/.test(code)
     ? `${code.slice(0, 4)}.${code.slice(4, 6)}.${code.slice(6)}`
     : code;
+}
+
+export const pageCount = (total: number) =>
+  Math.max(1, Math.ceil(total / PAGE_SIZE));
+
+/** The page to show instead, when `page` is past the last one (stale or hand-edited links). */
+export function pageOverflow(page: number, total: number): number | null {
+  return page > pageCount(total) ? pageCount(total) : null;
 }
