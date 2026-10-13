@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Client } from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
+import { formToInput, SCHEMAS, TABLES, type Entity } from "@/lib/admin/schemas";
 import { connect, describeDb, type DbError } from "./helpers";
 
 // CD-014: platform admins edit tariff measures, fees and special programs only with a second
@@ -419,5 +420,55 @@ describeDb("admin editors (live database)", () => {
     expect(
       code(await as(null, "aal1", [["select mfa_failures_recent()", []]])),
     ).toBe("42501");
+  });
+
+  it("saves exactly what the editor sends, for every table", async () => {
+    // The same path as saveDraft: form -> formToInput -> schema -> insert, no hand-written columns.
+    const forms: Record<Entity, [string, string][]> = {
+      measures: [
+        ["authority", "Section 301"],
+        ["hts_prefixes", "6109"],
+        ["origin_countries", "CN"],
+        ["rate_type", "ad_valorem"],
+        ["rate_value", "25"],
+        ["applies_to_modes", "ocean"],
+        ["effective_from", "2026-01-01"],
+        ["source_url", "https://www.federalregister.gov/x"],
+        ["notes", TAG],
+      ],
+      fees: [
+        ["fee_type", "informal_entry_limit"],
+        ["mode", ""],
+        ["flat_amount", "2500.00"],
+        ["effective_from", "2026-01-01"],
+        ["source_url", "https://www.cbp.gov/x"],
+        ["notes", TAG],
+      ],
+      programs: [
+        ["symbol", "S"],
+        ["name", "USMCA"],
+        ["countries", "MX CA"],
+        ["mpf_exempt", "on"],
+        ["effective_from", "2020-07-01"],
+        ["source_url", "https://hts.usitc.gov/gn"],
+        ["notes", TAG],
+      ],
+    };
+    for (const entity of Object.keys(forms) as Entity[]) {
+      const form = new FormData();
+      for (const [k, v] of forms[entity]) form.append(k, v);
+      const row = SCHEMAS[entity].parse(formToInput(entity, form)) as Record<
+        string,
+        unknown
+      >;
+      const cols = Object.keys(row);
+      const sql = `insert into ${TABLES[entity]} (${cols.join(", ")})
+        select ${cols.map((c) => `r.${c}`).join(", ")}
+        from jsonb_populate_record(null::${TABLES[entity]}, $1::jsonb) r returning id, market`;
+      const [saved] = ok(
+        await as(user.admin, "aal2", [[sql, [JSON.stringify(row)]]]),
+      );
+      expect(saved, entity).toMatchObject({ market: "US" });
+    }
   });
 });

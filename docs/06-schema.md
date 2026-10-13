@@ -108,6 +108,11 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
     (`is_platform_admin_mfa()`: `is_platform_admin()`, JWT `aal = aal2` and a `totp` entry in
     `amr` under 12 hours old) can insert, update or delete. Everyone signed in reads published
     rows; admins with a fresh second factor also see drafts.
+  - **Reading for quotes:** RLS shows drafts to an admin with a fresh second factor, so every
+    loader that feeds the landed-cost engine filters `published = true` explicitly (like
+    `active_measures`), whoever is signed in.
+  - **Market:** `market` defaults to `US` on all three tables; other markets arrive with their
+    packs.
   - **Author columns:** `created_by` and `published_by` are not granted to users, so select
     explicit columns (`select *` fails). Who changed what is in `reference_audit`.
   - **Second-factor attempts:** `admin_mfa_attempts` is private (RLS on, no policies). Only

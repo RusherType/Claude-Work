@@ -87,6 +87,9 @@ alter table tariff_measures
   add column published_by uuid references auth.users,
   add column created_at timestamptz not null default now();
 alter table tariff_measures alter column created_by set default auth.uid();
+-- The editors write US rows; other markets come with their packs (CD-110+).
+alter table tariff_measures alter column market set default 'US';
+alter table fee_schedules alter column market set default 'US';
 
 alter table fee_schedules
   add column notes text,

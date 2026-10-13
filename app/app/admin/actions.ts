@@ -58,7 +58,16 @@ function dbMessage(error: { code?: string; message?: string }): string {
   if (error.code === "23514") {
     return "The database refused a value. Check prefixes, countries, dates and the https source.";
   }
-  return "Couldn't save. Try again.";
+  if (error.code === "23502") {
+    return "A required value is missing. Fill in every field marked required.";
+  }
+  // Unexpected: log the code and message (never the row) so it can be diagnosed. Sentry picks
+  // server logs up once it is connected (CD-007).
+  console.error("admin save failed", {
+    code: error.code,
+    message: error.message,
+  });
+  return "Couldn't save because of a problem on our side. Try again; if it keeps failing, tell the team.";
 }
 
 async function client() {
@@ -127,7 +136,10 @@ async function rowAction(
     supabase: NonNullable<Awaited<ReturnType<typeof client>>>,
     table: (typeof TABLES)[Entity],
     id: string,
-  ) => PromiseLike<{ error: { code?: string; message?: string } | null }>,
+  ) => PromiseLike<{
+    error: { code?: string; message?: string } | null;
+    data: { id: string }[] | null;
+  }>,
   after: (entity: Entity, id: string) => string,
 ): Promise<EditState> {
   const parsed = rowForm.safeParse({
@@ -138,12 +150,18 @@ async function rowAction(
   const supabase = await client();
   if (!supabase)
     return { status: "error", message: dbMessage({ code: "42501" }) };
-  const { error } = await run(
+  const { error, data } = await run(
     supabase,
     TABLES[parsed.data.entity],
     parsed.data.id,
   );
   if (error) return { status: "error", message: dbMessage(error) };
+  if (!data?.length) {
+    return {
+      status: "error",
+      message: "This row changed meanwhile. Reload the page.",
+    };
+  }
   revalidatePath("/app/admin", "layout");
   redirect(after(parsed.data.entity, parsed.data.id));
 }
@@ -159,7 +177,8 @@ export async function publishRow(
         .from(table)
         .update({ published: true } as never)
         .eq("id", id)
-        .eq("published", false),
+        .eq("published", false)
+        .select("id"),
     (entity, id) => `/app/admin/${entity}/${id}`,
   );
 }
@@ -171,7 +190,7 @@ export async function deleteDraft(
   return rowAction(
     form,
     (s, table, id) =>
-      s.from(table).delete().eq("id", id).eq("published", false),
+      s.from(table).delete().eq("id", id).eq("published", false).select("id"),
     (entity) => `/app/admin/${entity}`,
   );
 }
@@ -192,7 +211,8 @@ export async function endRow(
         .from(table)
         .update({ effective_to: date.data } as never)
         .eq("id", id)
-        .eq("published", true),
+        .eq("published", true)
+        .select("id"),
     (entity, id) => `/app/admin/${entity}/${id}`,
   );
 }
