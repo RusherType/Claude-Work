@@ -77,8 +77,12 @@ export function readFacts(stored: unknown): Facts {
         .filter((m) => m.name)
         .slice(0, MAX_MATERIALS)
     : [];
+  // Kept within the schema's limits, so stored questions can never make a save impossible.
   const missing = Array.isArray(raw.missing)
-    ? raw.missing.filter((q): q is string => typeof q === "string")
+    ? raw.missing
+        .filter((q): q is string => text(300).safeParse(q).success)
+        .map((q) => q.trim())
+        .slice(0, 20)
     : undefined;
   return {
     materials,

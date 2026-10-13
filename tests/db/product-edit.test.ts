@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client } from "pg";
 import { afterAll, beforeAll, expect, it } from "vitest";
 import {
+  changedColumns,
   formToProductEdit,
   productEditSchema,
 } from "@/lib/catalog/product-edit";
@@ -157,5 +158,64 @@ describeDb("product edits (live database)", () => {
     );
     await db.query("commit");
     expect((await state()).status).toBe("confirmed");
+  });
+
+  it("saving an imported confirmed product with only vendor and origin changed keeps it confirmed", async () => {
+    // Shaped exactly as import_products stores it: facts {}, empty lists, USD with no value.
+    const imported = randomUUID();
+    await db.query(
+      `insert into products (id, workspace_id, sku, title, origin_country, currency, tags, image_urls)
+       values ($1, $2, 'IMP-1', 'Ceramic mug', 'CN', 'USD', '{}', '{}')`,
+      [imported, ws],
+    );
+    const cls = randomUUID();
+    await db.query(
+      `insert into classifications (id, workspace_id, product_id, code, status, is_current, confirmed_at)
+       values ($1, $2, $3, '6912004400', 'confirmed', true, now())`,
+      [cls, ws, imported],
+    );
+    const stored = (
+      await db.query(
+        `select title, description, product_type, vendor, tags, image_urls, origin_country,
+                customs_value::text, currency, weight_kg::text, facts, updated_at::text
+         from products where id = $1`,
+        [imported],
+      )
+    ).rows[0];
+    // The page shows the stored values; the person changes only vendor and origin.
+    const form = new FormData();
+    for (const [k, v] of Object.entries({
+      title: "Ceramic mug",
+      vendor: "Acme",
+      origin_country: "VN",
+      currency: "USD",
+    }))
+      form.append(k, v);
+    const changes = changedColumns(
+      productEditSchema.parse(formToProductEdit(form)),
+      stored,
+    );
+    expect(changes).toEqual({ vendor: "Acme", origin_country: "VN" });
+    await db.query("begin");
+    await db.query("set local role authenticated");
+    await db.query("select set_config('request.jwt.claims', $1, true)", [
+      JSON.stringify({ sub: user.member, role: "authenticated" }),
+    ]);
+    const cols = Object.keys(changes);
+    const res = await db.query(
+      `update products set ${cols.map((c, i) => `${c} = $${i + 3}`).join(", ")}
+       where id = $1 and updated_at = $2`,
+      [
+        imported,
+        stored.updated_at,
+        ...cols.map((c) => changes[c as keyof typeof changes]),
+      ],
+    );
+    await db.query("commit");
+    expect(res.rowCount).toBe(1);
+    const status = (
+      await db.query("select status from classifications where id = $1", [cls])
+    ).rows[0].status;
+    expect(status).toBe("confirmed");
   });
 });

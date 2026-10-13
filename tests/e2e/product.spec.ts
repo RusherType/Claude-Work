@@ -78,8 +78,9 @@ test.describe("product detail", () => {
     await expect(page.getByRole("status")).toHaveText(
       "Saved. The confirmed code is now Outdated and needs to be checked again.",
     );
+    // The chip reads "! Outdated" (the icon is hidden from screen readers).
     await expect(
-      page.getByText("Outdated", { exact: true }).first(),
-    ).toBeVisible();
+      page.getByRole("complementary", { name: "Tariff code" }),
+    ).toContainText("Outdated");
   });
 });

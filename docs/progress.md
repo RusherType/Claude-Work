@@ -367,3 +367,16 @@ codes, and icons on every status chip.
     outdates a confirmed code, and an identical re-save does not;
   - Playwright covers the page.
 - **E2E helper:** the guarded local-database helper is now shared (`tests/e2e/db.ts`).
+
+**CD-024 review, round 1:**
+- **Outdated after any save (fixed):** a save rewrote facts and currency in normal form, which
+  differed from what the import stores (`{}`, and `USD` with no value), so any save of an imported
+  confirmed product marked its code Outdated. The action now sends only the columns that changed
+  (`changedColumns`, unit-tested), and a database test saves an import-shaped confirmed product
+  through the real form path with only the vendor and origin changed: it stays confirmed.
+- **Stuck saves (fixed):** errors not tied to a form field are added to the message. The agent's
+  open questions are clamped to the schema, so they can never block a save.
+- **Accessibility:** material rows are a labelled group, with errors linked to their inputs.
+
+**Requirement for CD-021 (Shopify sync):** the sync updates only store-owned columns (title,
+description, type, tags, images, SKU, vendor) and never `facts`, as the product page promises.

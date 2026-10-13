@@ -30,7 +30,7 @@ export default async function ProductPage(
     supabase
       .from("products")
       .select(
-        "id, workspace_id, sku, title, description, product_type, vendor, tags, image_urls, origin_country, customs_value::text, currency, weight_kg::text, facts, updated_at, integration_id",
+        "id, workspace_id, sku, title, description, product_type, vendor, tags, image_urls, origin_country, customs_value::text, currency, weight_kg::text, facts, updated_at::text, integration_id",
       )
       .eq("id", id)
       .eq("workspace_id", ctx.workspace.id)

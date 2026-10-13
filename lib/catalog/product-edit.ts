@@ -1,6 +1,7 @@
 /** CD-024: the product page form, parsed into the columns a member may change. */
 import { z } from "zod";
-import { factsSchema, MAX_MATERIALS } from "./facts";
+import { Decimal } from "@/lib/tariff/money";
+import { factsSchema, MAX_MATERIALS, readFacts } from "./facts";
 import {
   productFields,
   VALUE_CURRENCY_ISSUE,
@@ -71,6 +72,63 @@ export function editErrors(error: z.ZodError): Record<string, string> {
       key = String(second ?? "facts");
     }
     out[key] ??= issue.message;
+  }
+  return out;
+}
+
+/** A product row as stored (numeric columns read as text). */
+export type StoredProduct = {
+  title: string;
+  description: string | null;
+  product_type: string | null;
+  vendor: string | null;
+  tags: string[] | null;
+  image_urls: string[] | null;
+  origin_country: string | null;
+  customs_value: string | null;
+  currency: string | null;
+  weight_kg: string | null;
+  facts: unknown;
+};
+
+const sameNumber = (a: string | null, b: string | null) =>
+  a === null || b === null ? a === b : new Decimal(a).equals(b);
+const sameList = (a: string[] | null, b: string[]) =>
+  JSON.stringify(a ?? []) === JSON.stringify(b);
+
+/**
+ * Only the columns the person actually changed. Saving rewrites nothing else, so an untouched
+ * field stored in another form (facts `{}`, a currency with no value from the import) never
+ * changes the content hash and never marks a confirmed code Outdated.
+ */
+export function changedColumns(
+  edit: ProductEdit,
+  stored: StoredProduct,
+): Partial<ProductEdit> {
+  const out: Partial<ProductEdit> = {};
+  if (edit.title !== stored.title) out.title = edit.title;
+  if (edit.description !== stored.description)
+    out.description = edit.description;
+  if (edit.product_type !== stored.product_type)
+    out.product_type = edit.product_type;
+  if (edit.vendor !== stored.vendor) out.vendor = edit.vendor;
+  if (!sameList(stored.tags, edit.tags)) out.tags = edit.tags;
+  if (!sameList(stored.image_urls, edit.image_urls))
+    out.image_urls = edit.image_urls;
+  if (edit.origin_country !== stored.origin_country)
+    out.origin_country = edit.origin_country;
+  if (!sameNumber(edit.weight_kg, stored.weight_kg))
+    out.weight_kg = edit.weight_kg;
+  // The currency only means something next to a value.
+  if (
+    !sameNumber(edit.customs_value, stored.customs_value) ||
+    (edit.customs_value !== null && edit.currency !== stored.currency)
+  ) {
+    out.customs_value = edit.customs_value;
+    if (edit.customs_value !== null) out.currency = edit.currency;
+  }
+  if (JSON.stringify(edit.facts) !== JSON.stringify(readFacts(stored.facts))) {
+    out.facts = edit.facts;
   }
   return out;
 }

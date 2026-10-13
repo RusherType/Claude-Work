@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { factsSchema, readFacts } from "./facts";
 import {
+  changedColumns,
   editErrors,
   formToProductEdit,
   productEditSchema,
@@ -145,5 +146,96 @@ describe("readFacts", () => {
       factsSchema.safeParse(readFacts({ materials: [{ name: "Cotton" }] }))
         .success,
     ).toBe(true);
+  });
+});
+
+describe("changedColumns", () => {
+  // As the CSV import stores a product: facts {}, empty lists, USD with no value.
+  const stored = {
+    title: "Crew T-shirt",
+    description: null,
+    product_type: null,
+    vendor: null,
+    tags: [] as string[],
+    image_urls: [] as string[],
+    origin_country: "CN",
+    customs_value: null,
+    currency: "USD",
+    weight_kg: "0.180",
+    facts: {},
+  };
+  const edit = (entries: Record<string, string>) =>
+    productEditSchema.parse(
+      formToProductEdit(
+        form({
+          title: "Crew T-shirt",
+          origin_country: "CN",
+          weight_kg: "0.18",
+          ...entries,
+        }),
+      ),
+    );
+
+  it("finds nothing to save when nothing changed, whatever the stored form", () => {
+    expect(changedColumns(edit({}), stored)).toEqual({});
+    expect(
+      changedColumns(edit({}), { ...stored, tags: null, image_urls: null }),
+    ).toEqual({});
+  });
+
+  it("sends only what changed", () => {
+    expect(
+      changedColumns(edit({ vendor: "Acme", origin_country: "VN" }), stored),
+    ).toEqual({
+      vendor: "Acme",
+      origin_country: "VN",
+    });
+    expect(changedColumns(edit({ weight_kg: "0.2" }), stored)).toEqual({
+      weight_kg: "0.2",
+    });
+    expect(changedColumns(edit({ form: "Knitted" }), stored)).toEqual({
+      facts: { materials: [], function: null, user: null, form: "Knitted" },
+    });
+  });
+
+  it("treats a value and its currency together", () => {
+    expect(
+      changedColumns(edit({ customs_value: "4.20", currency: "EUR" }), stored),
+    ).toEqual({ customs_value: "4.20", currency: "EUR" });
+    const withValue = { ...stored, customs_value: "4.20", currency: "EUR" };
+    expect(
+      changedColumns(
+        edit({ customs_value: "4.2", currency: "EUR" }),
+        withValue,
+      ),
+    ).toEqual({});
+    expect(
+      changedColumns(
+        edit({ customs_value: "4.20", currency: "GBP" }),
+        withValue,
+      ),
+    ).toEqual({
+      customs_value: "4.20",
+      currency: "GBP",
+    });
+    expect(changedColumns(edit({}), withValue)).toEqual({
+      customs_value: null,
+    });
+  });
+});
+
+describe("readFacts and the agent's questions", () => {
+  it("keeps at most 20 valid questions, so they never block a save", () => {
+    const stored = {
+      missing: [
+        ...Array.from({ length: 25 }, (_, i) => `Question ${i}?`),
+        "x".repeat(301),
+        "bad\u0000one",
+        "   ",
+      ],
+    };
+    const facts = readFacts(stored);
+    expect(facts.missing).toHaveLength(20);
+    expect(factsSchema.safeParse(facts).success).toBe(true);
   });
 });

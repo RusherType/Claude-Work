@@ -80,8 +80,9 @@ export function ProductForm({
     >
       {synced && (
         <p className="text-muted text-sm">
-          This product comes from your store. Changes to the title, description,
-          type, tags and images may be replaced at the next sync; facts stay.
+          This product comes from your store. The next store sync may replace
+          the title, description, type, tags and images; the facts you add here
+          are kept.
         </p>
       )}
       <Text
@@ -300,12 +301,19 @@ function Materials({
   );
   const [nextKey, setNextKey] = useState(MAX_MATERIALS + 1);
   return (
-    <div className="flex flex-col gap-2">
+    <div
+      className="flex flex-col gap-2"
+      role="group"
+      aria-labelledby="materials-label"
+      aria-describedby={errors.materials ? "materials-error" : undefined}
+    >
       <p className="text-sm font-medium" id="materials-label">
         Materials
       </p>
       {errors.materials && (
-        <p className="text-risk text-xs">{errors.materials}</p>
+        <p id="materials-error" className="text-risk text-xs">
+          {errors.materials}
+        </p>
       )}
       {rows.map((m, i) => {
         const nameError = errors[`material_${i}_name`];
@@ -322,10 +330,13 @@ function Materials({
                 defaultValue={m.name}
                 placeholder="Cotton"
                 aria-invalid={nameError ? true : undefined}
+                aria-describedby={nameError ? `m-${i}-name-error` : undefined}
                 className={`${field} w-48`}
               />
               {nameError && (
-                <span className="text-risk text-xs">{nameError}</span>
+                <span id={`m-${i}-name-error`} className="text-risk text-xs">
+                  {nameError}
+                </span>
               )}
             </div>
             <div className="flex flex-col gap-1">
@@ -339,10 +350,13 @@ function Materials({
                 placeholder="%"
                 inputMode="decimal"
                 aria-invalid={pctError ? true : undefined}
+                aria-describedby={pctError ? `m-${i}-pct-error` : undefined}
                 className={`${field} w-20`}
               />
               {pctError && (
-                <span className="text-risk text-xs">{pctError}</span>
+                <span id={`m-${i}-pct-error`} className="text-risk text-xs">
+                  {pctError}
+                </span>
               )}
             </div>
             <button

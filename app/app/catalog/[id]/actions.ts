@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { readFacts } from "@/lib/catalog/facts";
 import {
+  changedColumns,
   editErrors,
   formToProductEdit,
   productEditSchema,
@@ -34,6 +35,22 @@ const target = z.object({
 });
 const WRITE_ROLES = new Set(["owner", "admin", "member"]);
 const CONFIRMED = new Set(["confirmed", "broker_verified"]);
+const FORM_FIELDS = new Set([
+  "title",
+  "description",
+  "product_type",
+  "vendor",
+  "tags",
+  "image_urls",
+  "origin_country",
+  "customs_value",
+  "currency",
+  "weight_kg",
+  "function",
+  "user",
+  "form",
+  "materials",
+]);
 
 function submitted(form: FormData): Record<string, string> {
   const out: Record<string, string> = {};
@@ -68,7 +85,9 @@ export async function saveProduct(
 
   const current = await supabase
     .from("products")
-    .select("id, workspace_id, facts")
+    .select(
+      "id, workspace_id, title, description, product_type, vendor, tags, image_urls, origin_country, customs_value::text, currency, weight_kg::text, facts",
+    )
     .eq("id", t.data.productId)
     .maybeSingle();
   const product = current.data;
@@ -86,7 +105,18 @@ export async function saveProduct(
   const missing = readFacts(product.facts).missing;
   const parsed = productEditSchema.safeParse(formToProductEdit(form, missing));
   if (!parsed.success) {
-    return fail("Fix the highlighted fields.", editErrors(parsed.error));
+    const errors = editErrors(parsed.error);
+    // Anything not tied to a form field goes in the message, so it is never invisible.
+    const other = Object.entries(errors)
+      .filter(([k]) => !FORM_FIELDS.has(k) && !k.startsWith("material_"))
+      .map(([, m]) => m);
+    return fail(["Fix the highlighted fields.", ...other].join(" "), errors);
+  }
+  // Only what the person changed: untouched fields stored in another form must not change the
+  // content hash (and so must not mark a confirmed code Outdated).
+  const changes = changedColumns(parsed.data, product);
+  if (Object.keys(changes).length === 0) {
+    redirect(`/app/catalog/${t.data.productId}?saved=1`);
   }
 
   const before = await supabase
@@ -101,7 +131,7 @@ export async function saveProduct(
     .from("products")
     // Numbers go as exact decimal strings (PostgREST accepts them for numeric); the generated
     // types say number, hence the cast.
-    .update(parsed.data as never)
+    .update(changes as never)
     .eq("id", t.data.productId)
     .eq("updated_at", t.data.version)
     .select("id");
