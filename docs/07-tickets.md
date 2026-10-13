@@ -15,7 +15,7 @@
 | [x] | CD-011 | Tariff data | Rate parser | Parses "Free", "5.3%", "2.4¢/kg", "25¢/kg + 3.4%" etc.; 50 unit tests | P0 | 1.5 | CD-010 |
 | [ ] | CD-012 | Tariff data | Tariff embeddings | Leaf lines embedded with path text; sensible top-10 for 20 test queries | P0 | 1 | CD-010 |
 | [ ] | CD-013 | Tariff data | Rulings index | Rulings ingested politely (or licensed), chunked, embedded, revoked status; `match_rulings` works | P0 | 3 | CD-002 |
-| [ ] | CD-014 | Tariff data | Admin editors | Create/edit/publish measures and fees with sources; platform admin only | P0 | 2 | CD-004 |
+| [x] | CD-014 | Tariff data | Admin editors | Create/edit/publish measures and fees with sources; platform admin only | P0 | 2 | CD-004 |
 | [ ] | CD-015 | Tariff data | Seed measures | Current Section 232, 301, 338 measures with FR/CSMS links and dates | P0 | 2 | CD-014 |
 | [ ] | CD-020 | Catalog | Shopify app shell | OAuth install, embedded app loads, HMAC and session tokens verified | P0 | 2 | CD-004 |
 | [ ] | CD-021 | Catalog | Shopify product sync | Bulk initial import; create/update/uninstall webhooks keep it current | P0 | 2 | CD-020 |

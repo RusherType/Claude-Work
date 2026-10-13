@@ -301,3 +301,14 @@ marking codes Outdated (above) is still open for the owner.
   - CD-051 and the engine read fees and programs with `published = true` and explicit columns
     (add `active_fees()` / `active_programs()` like `active_measures`);
   - CD-062 (Resend) emails the admin when an authenticator is enrolled.
+
+**CD-014 ticked.**
+- **Reviews:** the security audit passed, and the reviewer approved after finding a real bug.
+  Measure and fee saves failed, because `market` was required with no default and the editor
+  never sent it; it was hidden behind a generic error.
+- **Fixes:** `market` now defaults to US. A database test now saves exactly what the editor
+  sends, and the "missing value" error has its own message.
+- **CI:** Playwright passed on d1c9d8f, the first green run of the full admin flow (authenticator
+  set-up, draft, publish, end date, change log). The generated types were refreshed in the tick
+  commit.
+- **Totals:** 328 unit tests and 259 database tests.

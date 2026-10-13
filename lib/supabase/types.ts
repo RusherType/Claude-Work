@@ -560,7 +560,7 @@ export type Database = {
           fee_type: string;
           flat_amount?: number | null;
           id?: string;
-          market: Database["public"]["Enums"]["market_code"];
+          market?: Database["public"]["Enums"]["market_code"];
           max_amount?: number | null;
           min_amount?: number | null;
           mode?: string | null;
@@ -1206,7 +1206,7 @@ export type Database = {
           exempt_programs?: string[] | null;
           hts_prefixes: string[];
           id?: string;
-          market: Database["public"]["Enums"]["market_code"];
+          market?: Database["public"]["Enums"]["market_code"];
           notes?: string | null;
           origin_countries: string[];
           published?: boolean;
