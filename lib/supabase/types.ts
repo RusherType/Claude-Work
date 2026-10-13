@@ -85,6 +85,13 @@ export type Database = {
             foreignKeyName: "agent_questions_workspace_id_product_id_fkey";
             columns: ["workspace_id", "product_id"];
             isOneToOne: false;
+            referencedRelation: "catalog_items";
+            referencedColumns: ["workspace_id", "id"];
+          },
+          {
+            foreignKeyName: "agent_questions_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
             referencedRelation: "products";
             referencedColumns: ["workspace_id", "id"];
           },
@@ -152,6 +159,13 @@ export type Database = {
             foreignKeyName: "agent_runs_workspace_id_product_id_fkey";
             columns: ["workspace_id", "product_id"];
             isOneToOne: false;
+            referencedRelation: "catalog_items";
+            referencedColumns: ["workspace_id", "id"];
+          },
+          {
+            foreignKeyName: "agent_runs_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
             referencedRelation: "products";
             referencedColumns: ["workspace_id", "id"];
           },
@@ -194,6 +208,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "workspaces";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "alert_items_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
+            referencedRelation: "catalog_items";
+            referencedColumns: ["workspace_id", "id"];
           },
           {
             foreignKeyName: "alert_items_workspace_id_product_id_fkey";
@@ -396,6 +417,13 @@ export type Database = {
             foreignKeyName: "broker_orders_workspace_id_product_id_fkey";
             columns: ["workspace_id", "product_id"];
             isOneToOne: false;
+            referencedRelation: "catalog_items";
+            referencedColumns: ["workspace_id", "id"];
+          },
+          {
+            foreignKeyName: "broker_orders_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
             referencedRelation: "products";
             referencedColumns: ["workspace_id", "id"];
           },
@@ -480,6 +508,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "workspaces";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "classifications_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
+            referencedRelation: "catalog_items";
+            referencedColumns: ["workspace_id", "id"];
           },
           {
             foreignKeyName: "classifications_workspace_id_product_id_fkey";
@@ -853,6 +888,13 @@ export type Database = {
             isOneToOne: false;
             referencedRelation: "workspaces";
             referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "quote_lines_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
+            referencedRelation: "catalog_items";
+            referencedColumns: ["workspace_id", "id"];
           },
           {
             foreignKeyName: "quote_lines_workspace_id_product_id_fkey";
@@ -1307,7 +1349,35 @@ export type Database = {
       };
     };
     Views: {
-      [_ in never]: never;
+      catalog_items: {
+        Row: {
+          chapter: string | null;
+          checked_at: string | null;
+          code: string | null;
+          confidence: number | null;
+          created_at: string | null;
+          currency: string | null;
+          customs_value: number | null;
+          id: string | null;
+          image_url: string | null;
+          origin_country: string | null;
+          sku: string | null;
+          status: Database["public"]["Enums"]["class_status"] | null;
+          title: string | null;
+          updated_at: string | null;
+          workspace_id: string | null;
+        };
+        ComputedFields: never;
+        Relationships: [
+          {
+            foreignKeyName: "products_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Functions: {
       accept_invitation: { Args: { p_token: string }; Returns: string };
@@ -1350,6 +1420,14 @@ export type Database = {
       all_match: {
         Args: { p_max_length: number; p_pattern: string; p_values: string[] };
         Returns: boolean;
+      };
+      catalog_facets: {
+        Args: { p_workspace_id: string };
+        Returns: {
+          facet: string;
+          products: number;
+          value: string;
+        }[];
       };
       create_invitation: {
         Args: {

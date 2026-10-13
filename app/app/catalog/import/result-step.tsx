@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 import { rowsCsv } from "@/lib/catalog/import";
 import { primary, secondary } from "@/lib/ui/styles";
 import type { FileData, Progress } from "./import-wizard";
-import { download } from "./upload-step";
+import { download } from "@/lib/ui/download";
 
 export function ResultStep({
   file,

@@ -132,6 +132,12 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
     - a percentage or flat amount on every fee, with the informal limit in `flat_amount`;
     - min ≤ max, end ≥ start, and https sources.
 
+- `catalog_items` (CD-023): view over products and their current US classification, with
+  `security_invoker = true`, so the products and classifications policies apply. It is select-only
+  for signed-in users and covered by the isolation suite. `catalog_facets(workspace)` counts
+  products per status, origin and chapter for the catalog filters. Trigram indexes on product
+  title and SKU keep search fast at 10,000+ products.
+
 ## Tests
 
 - `tests/db/rls-coverage.test.ts` statically checks every migration: RLS on every table, a required

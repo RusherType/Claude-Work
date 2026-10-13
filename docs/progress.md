@@ -312,3 +312,25 @@ marking codes Outdated (above) is still open for the owner.
   set-up, draft, publish, end date, change log). The generated types were refreshed in the tick
   commit.
 - **Totals:** 328 unit tests and 259 database tests.
+
+## 2026-10-13 (CD-023)
+
+**CD-014 CI:** green on 9790582, all three jobs, including the full admin flow.
+
+**CD-023 (catalog table):**
+- **Database:** migration `0005_catalog_view.sql` adds `catalog_items` (security-invoker view of
+  each product with its current US classification), `catalog_facets`, and trigram and paging
+  indexes.
+- **Page:** `/app/catalog` is a server-rendered table, 50 per page. Search covers title, SKU and
+  HTS-code prefix. Filters cover status (including "Not classified"), origin and chapter, with
+  counts, and live in the URL, so they work without JavaScript and can be shared.
+- **Selection:** select per page; "Export selected (CSV)" works. "Classify selected" is shown but
+  disabled until the agent exists.
+- **Layouts:** stacked cards under 768 px; status chips use words and an icon.
+- **Tests:**
+  - database: 10,000 products, where every page, filter and search query and the facets stay
+    under 500 ms locally;
+  - the isolation suite now also covers tenant views (read isolation, no writes through);
+  - Playwright covers the catalog.
+- **Columns:** duty rate and landed cost arrive with tariff data (CD-010) and the calculator
+  (CD-051).

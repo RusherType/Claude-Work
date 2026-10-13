@@ -122,6 +122,8 @@ const INSERT: Record<string, Insert> = {
   ],
 };
 const TENANT_TABLES = Object.keys(INSERT);
+// Read-only views over tenant tables (security_invoker, so the tables' policies apply).
+const TENANT_VIEWS = ["catalog_items"];
 
 // The id keys that identify the inserted row itself (everything else in Ids is a parent).
 const OWN_ID: Record<string, string[]> = {
@@ -393,10 +395,55 @@ suite("tenant isolation (live database)", () => {
        where table_schema = 'public' and column_name = 'workspace_id' order by 1`,
     );
     expect(rows.map((r) => r.table_name).sort()).toEqual(
-      [...TENANT_TABLES].sort(),
+      [...TENANT_TABLES, ...TENANT_VIEWS].sort(),
     );
     expect(Object.keys(UPDATE_SET).sort()).toEqual([...TENANT_TABLES].sort());
     expect(Object.keys(MAY_INSERT).sort()).toEqual([...TENANT_TABLES].sort());
+  });
+
+  describe.each(TENANT_VIEWS)("%s (view)", (view) => {
+    it("shows each user only their own workspace's rows, and nothing to anon", async () => {
+      const seen = await as(user.ownerA, async () => {
+        const { rows } = await db.query(
+          `select distinct workspace_id::text from ${view}`,
+        );
+        return rows.map((r) => r.workspace_id);
+      });
+      expect(seen).toEqual([ws.A]);
+      expect(
+        await as(
+          user.outsider,
+          async () => (await db.query(`select 1 from ${view}`)).rowCount,
+        ),
+      ).toBe(0);
+      const anon = await as(null, async () => {
+        try {
+          return `rows:${(await db.query(`select 1 from ${view}`)).rowCount}`;
+        } catch (e) {
+          return `error:${(e as { code?: string }).code}`;
+        }
+      });
+      expect(["rows:0", "error:42501"]).toContain(anon);
+    });
+
+    it("cannot be written through", async () => {
+      for (const sql of [
+        `update ${view} set title = 'x'`,
+        `delete from ${view}`,
+        `insert into ${view} (id) values (gen_random_uuid())`,
+      ]) {
+        const err = await as(user.ownerA, async () => {
+          try {
+            await db.query(sql);
+            return null;
+          } catch (e) {
+            return (e as { code?: string }).code;
+          }
+        });
+        // No privilege (42501) or not updatable at all (55000): either way, refused.
+        expect(["42501", "55000"], sql).toContain(err);
+      }
+    });
   });
 
   describe.each(TENANT_TABLES)("%s", (table) => {

@@ -4,7 +4,7 @@ import { problemsCsv, type CheckResult } from "@/lib/catalog/import";
 import { primary, secondary } from "@/lib/ui/styles";
 import type { FileData } from "./import-wizard";
 import { StepHeading } from "./step-heading";
-import { download } from "./upload-step";
+import { download } from "@/lib/ui/download";
 
 const SHOWN_ERRORS = 50;
 

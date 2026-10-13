@@ -48,6 +48,12 @@ export default async function AppHome() {
           </Link>
         )}
         <Link
+          href="/app/catalog"
+          className="text-brand text-sm font-medium underline"
+        >
+          View catalog
+        </Link>
+        <Link
           href="/app/settings/team"
           className="text-brand text-sm font-medium underline"
         >

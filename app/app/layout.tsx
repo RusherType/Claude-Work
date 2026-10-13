@@ -42,6 +42,9 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
           )}
           {ctx.workspace && (
             <>
+              <Link href="/app/catalog" className="text-sm">
+                Catalog
+              </Link>
               <Link href="/app/catalog/import" className="text-sm">
                 Import products
               </Link>
