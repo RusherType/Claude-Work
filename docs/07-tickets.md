@@ -20,7 +20,7 @@
 | [ ] | CD-020 | Catalog | Shopify app shell | OAuth install, embedded app loads, HMAC and session tokens verified | P0 | 2 | CD-004 |
 | [ ] | CD-021 | Catalog | Shopify product sync | Bulk initial import; create/update/uninstall webhooks keep it current | P0 | 2 | CD-020 |
 | [x] | CD-022 | Catalog | CSV import | Template, mapping, per-row errors, 5,000 rows under 60 s | P0 | 1.5 | CD-002 |
-| [ ] | CD-023 | Catalog | Catalog table | Paginated, filters (status, origin, chapter), search, bulk select, fast at 10,000 rows | P0 | 2 | CD-021 |
+| [x] | CD-023 | Catalog | Catalog table | Paginated, filters (status, origin, chapter), search, bulk select, fast at 10,000 rows | P0 | 2 | CD-021 |
 | [ ] | CD-024 | Catalog | Product detail | Editable facts; edit on a confirmed product marks it Outdated | P0 | 1.5 | CD-023 |
 | [ ] | CD-030 | Agent | Fact extraction | Haiku returns schema-valid facts with `missing` list for 30 sample products (repo fixtures; real Shopify data arrives with CD-021) | P0 | 1.5 | CD-002 |
 | [ ] | CD-031 | Agent | Agent tools | `search_hts`, `get_hts_node`, `search_rulings`, `get_ruling` with tests | P0 | 1.5 | CD-012, CD-013 |

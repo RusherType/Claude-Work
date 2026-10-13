@@ -334,3 +334,17 @@ marking codes Outdated (above) is still open for the owner.
   - Playwright covers the catalog.
 - **Columns:** duty rate and landed cost arrive with tariff data (CD-010) and the calculator
   (CD-051).
+
+**CD-023 ticked.** The reviewer approved after two rounds, and CI is green at a5c6cde, including
+the catalog Playwright flow on desktop and mobile. Round 1 fixed:
+- out-of-range pages, which now redirect;
+- search that dropped apostrophes and underscores;
+- select-all missing on phones;
+- a single primary action per screen;
+- a duplicate index;
+- the isolation suite, which now checks that listed views are security-invoker views;
+- a stale filter value in its dropdown.
+
+CI also caught a real bug: after "Clear filters" the form kept its old values. It is now
+remounted when the filters change. Extras: an HTS copy button, confidence shown on suggested
+codes, and icons on every status chip.
