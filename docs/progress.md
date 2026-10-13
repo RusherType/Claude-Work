@@ -348,3 +348,22 @@ the catalog Playwright flow on desktop and mobile. Round 1 fixed:
 CI also caught a real bug: after "Clear filters" the form kept its old values. It is now
 remounted when the filters change. Extras: an HTS copy button, confidence shown on suggested
 codes, and icons on every status chip.
+
+**CD-024 (product detail):**
+- **Page:** `/app/catalog/[id]`, linked from the catalog. On the left, details and facts; on the
+  right, the tariff code card, which reads "Suggested" with its confidence until a person
+  confirms it.
+- **Facts schema:** `lib/catalog/facts.ts` holds materials with shares (checked to add up to at
+  most 100, in exact tenths), what it does, who uses it and how it is made. It is shared with the
+  extraction agent (CD-030).
+- **Saving:** the Zod-validated server action re-checks the role. It saves only if nobody else
+  edited the product since it was opened, and it keeps the agent's open questions. Saving a
+  confirmed product warns first, then reports that the code is now Outdated (the
+  `products_outdated` trigger does the work).
+- **Viewers:** see a read-only view.
+- **Tests:**
+  - unit tests for the facts and edit schemas;
+  - database tests: viewers change nothing, a stale version changes nothing, a facts edit
+    outdates a confirmed code, and an identical re-save does not;
+  - Playwright covers the page.
+- **E2E helper:** the guarded local-database helper is now shared (`tests/e2e/db.ts`).

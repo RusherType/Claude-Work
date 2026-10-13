@@ -138,6 +138,14 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   products per status, origin and chapter for the catalog filters. Trigram indexes on product
   title and SKU keep search fast at 10,000+ products.
 
+- `products.facts` (CD-024, used by CD-030):
+  `{ materials: [{ name, percent | null }] (≤ 8; percent as a string, total ≤ 100), function, user,
+  form, missing? }`. Validated by `lib/catalog/facts.ts`. Sellers edit it on the product page; the
+  agent fills it and owns `missing`. It is part of the content hash, so an edit marks a confirmed
+  code Outdated.
+- Product edits from the page are conditional on the `updated_at` the page loaded (as text, to
+  keep microseconds), so a save never overwrites a newer edit.
+
 ## Tests
 
 - `tests/db/rls-coverage.test.ts` statically checks every migration: RLS on every table, a required

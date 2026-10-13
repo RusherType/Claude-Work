@@ -23,7 +23,7 @@ const URL_BAD = /[\s\u0000-\u001f\u007f-\u009f\u00a0\u2000-\u200b\u3000\ufeff]/;
 
 export { isCurrencyCode } from "./currencies";
 
-const text = (max: number) =>
+export const text = (max: number) =>
   z
     .string()
     .trim()
@@ -39,41 +39,49 @@ export const decimalPattern = (intDigits: number, places: number) =>
 export const VALUE_DIGITS = { int: 10, places: 2 } as const; // numeric(12,2)
 export const WEIGHT_DIGITS = { int: 7, places: 3 } as const; // numeric(10,3)
 
+/** Every product field a person can enter (the import and the product page share these rules). */
+export const productFields = {
+  title: text(500),
+  description: text(20000).nullable(),
+  product_type: text(200).nullable(),
+  vendor: text(200).nullable(),
+  tags: z.array(text(100)).max(250),
+  image_urls: z
+    .array(
+      z
+        .url({ protocol: /^https$/ })
+        .max(2000)
+        .refine((s) => !URL_BAD.test(s)),
+    )
+    .max(20),
+  origin_country: z
+    .string()
+    .refine(isCountryCode, "unknown country")
+    .nullable(),
+  customs_value: z
+    .string()
+    .regex(decimalPattern(VALUE_DIGITS.int, VALUE_DIGITS.places))
+    .nullable(),
+  currency: z.string().refine(isCurrencyCode, "unknown currency").nullable(),
+  weight_kg: z
+    .string()
+    .regex(decimalPattern(WEIGHT_DIGITS.int, WEIGHT_DIGITS.places))
+    .nullable(),
+};
+
+// A value is meaningless without its currency, and a currency alone would re-label a stored value.
+export const valueHasCurrency = (r: {
+  customs_value: string | null;
+  currency: string | null;
+}) => (r.customs_value === null) === (r.currency === null);
+export const VALUE_CURRENCY_ISSUE = {
+  path: ["currency"],
+  message: "a customs value and its currency go together",
+};
+
 export const productRowSchema = z
-  .strictObject({
-    sku: text(100),
-    title: text(500),
-    description: text(20000).nullable(),
-    product_type: text(200).nullable(),
-    vendor: text(200).nullable(),
-    tags: z.array(text(100)).max(250),
-    image_urls: z
-      .array(
-        z
-          .url({ protocol: /^https$/ })
-          .max(2000)
-          .refine((s) => !URL_BAD.test(s)),
-      )
-      .max(20),
-    origin_country: z
-      .string()
-      .refine(isCountryCode, "unknown country")
-      .nullable(),
-    customs_value: z
-      .string()
-      .regex(decimalPattern(VALUE_DIGITS.int, VALUE_DIGITS.places))
-      .nullable(),
-    currency: z.string().refine(isCurrencyCode, "unknown currency").nullable(),
-    weight_kg: z
-      .string()
-      .regex(decimalPattern(WEIGHT_DIGITS.int, WEIGHT_DIGITS.places))
-      .nullable(),
-  })
-  // A value is meaningless without its currency, and a currency alone would re-label a stored value.
-  .refine((r) => (r.customs_value === null) === (r.currency === null), {
-    path: ["currency"],
-    message: "a customs value and its currency go together",
-  });
+  .strictObject({ sku: text(100), ...productFields })
+  .refine(valueHasCurrency, VALUE_CURRENCY_ISSUE);
 export type ProductRow = z.infer<typeof productRowSchema>;
 
 export const importBatchSchema = z.strictObject({

@@ -1,43 +1,23 @@
 import { expect, test } from "@playwright/test";
-import { Client } from "pg";
 import { totp } from "../support/totp";
+import { e2eDatabaseUrl, withLocalDb } from "./db";
 import { hasSupabase, signInFromSignInPage, uniqueEmail } from "./helpers";
 
 // CD-014: a platform admin sets up an authenticator, then drafts, publishes and end-dates a fee.
 // Needs a local Supabase (CI) and its database URL, used only to make the test user an admin.
-const dbUrl = process.env.E2E_DATABASE_URL;
 
 async function makeAdmin(email: string) {
-  // Build the connection from checked parts: pg also reads ?host= from a URL, which could
-  // point somewhere else than the hostname checked here.
-  const url = new URL(dbUrl!);
-  if (
-    !["127.0.0.1", "localhost", "[::1]"].includes(url.hostname) ||
-    url.search !== ""
-  ) {
-    throw new Error("E2E_DATABASE_URL must be a plain local database URL");
-  }
-  const db = new Client({
-    host: url.hostname.replace(/^\[|\]$/g, ""),
-    port: Number(url.port || 5432),
-    user: decodeURIComponent(url.username),
-    password: decodeURIComponent(url.password),
-    database: url.pathname.slice(1),
-  });
-  await db.connect();
-  try {
-    await db.query(
+  await withLocalDb((db) =>
+    db.query(
       "update public.profiles set is_platform_admin = true where id = (select id from auth.users where email = $1)",
       [email],
-    );
-  } finally {
-    await db.end();
-  }
+    ),
+  );
 }
 
 test.describe("admin editors", () => {
   test.skip(
-    !hasSupabase || !dbUrl,
+    !hasSupabase || !e2eDatabaseUrl,
     "needs a local Supabase and its database (CI)",
   );
 

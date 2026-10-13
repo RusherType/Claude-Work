@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 import { toCsv } from "@/lib/catalog/csv";
 import { formatHtsCode, type CatalogStatus } from "@/lib/catalog/listing";
@@ -139,7 +140,12 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-3">
                     <Thumb url={r.image_url} />
-                    <span className="line-clamp-2">{r.title}</span>
+                    <Link
+                      href={`/app/catalog/${r.id}`}
+                      className="text-brand line-clamp-2 underline"
+                    >
+                      {r.title}
+                    </Link>
                   </div>
                 </td>
                 <td className="px-3 py-2 font-mono text-xs">{r.sku ?? "—"}</td>
@@ -175,7 +181,12 @@ export function CatalogTable({ rows }: { rows: CatalogRow[] }) {
             />
             <Thumb url={r.image_url} />
             <div className="flex min-w-0 flex-col gap-1 text-sm">
-              <span className="font-medium">{r.title}</span>
+              <Link
+                href={`/app/catalog/${r.id}`}
+                className="text-brand font-medium underline"
+              >
+                {r.title}
+              </Link>
               <span className="text-muted font-mono text-xs">
                 {[
                   r.sku,
