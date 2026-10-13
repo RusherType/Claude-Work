@@ -54,8 +54,8 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
       .range(from, from + PAGE_SIZE - 1),
     supabase.rpc("catalog_facets", { p_workspace_id: workspace.id }),
   ]);
-  // A page past the end (stale or hand-edited link): PostgREST answers 416 (PGRST103), or an
-  // empty page when the offset equals the total. Send the user to the last page instead.
+  // A page past the end (stale or hand-edited link): PostgREST answers 416 (PGRST103) without a
+  // count, so go to page 1; when the offset only reaches the end, go to the last page.
   if (rows.error?.code === "PGRST103")
     redirect(listingHref(listing, { page: 1 }));
   if (rows.error || facets.error) throw new Error("Could not load the catalog");
@@ -139,6 +139,10 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
           label="Origin"
           name="origin"
           value={listing.origin}
+          fallbackLabel={
+            listing.origin &&
+            (COUNTRY_NAMES.get(listing.origin) ?? listing.origin)
+          }
           options={counts("origin").map(([code, n]) => [
             code,
             COUNTRY_NAMES.get(code) ?? code,
@@ -150,6 +154,7 @@ export default async function CatalogPage(props: PageProps<"/app/catalog">) {
           label="Chapter"
           name="chapter"
           value={listing.chapter}
+          fallbackLabel={listing.chapter && `Chapter ${listing.chapter}`}
           options={counts("chapter").map(([ch, n]) => [ch, `Chapter ${ch}`, n])}
         />
         <button type="submit" className={secondary}>
@@ -210,12 +215,15 @@ function FilterSelect({
   name,
   value,
   options,
+  fallbackLabel,
 }: {
   id: string;
   label: string;
   name: string;
   value: string | undefined;
   options: (readonly [string, string, number])[];
+  /** Label for the active value when no product has it any more. */
+  fallbackLabel?: string;
 }) {
   return (
     <div className="flex flex-col gap-1.5">
@@ -226,7 +234,7 @@ function FilterSelect({
         <option value="">All</option>
         {/* A filter with no products left still shows as chosen, not as "All". */}
         {value && !options.some(([v]) => v === value) && (
-          <option value={value}>{value} (0)</option>
+          <option value={value}>{fallbackLabel ?? value} (0)</option>
         )}
         {options.map(([v, text, n]) => (
           <option key={v} value={v}>
