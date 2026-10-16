@@ -61,7 +61,9 @@ export function readFacts(stored: unknown): Facts {
   if (!stored || typeof stored !== "object" || Array.isArray(stored))
     return EMPTY_FACTS;
   const raw = stored as Record<string, unknown>;
-  const str = (v: unknown) => (typeof v === "string" && v.trim() ? v : null);
+  // Trimmed like the edit schema, so stored text never looks changed on an untouched save.
+  const str = (v: unknown) =>
+    typeof v === "string" && v.trim() ? v.trim() : null;
   const materials = Array.isArray(raw.materials)
     ? raw.materials
         .filter(
@@ -71,7 +73,7 @@ export function readFacts(stored: unknown): Facts {
           name: str(m.name) ?? "",
           percent:
             typeof m.percent === "number" || typeof m.percent === "string"
-              ? String(m.percent)
+              ? String(m.percent).trim()
               : null,
         }))
         .filter((m) => m.name)

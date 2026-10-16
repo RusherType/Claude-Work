@@ -380,3 +380,8 @@ codes, and icons on every status chip.
 
 **Requirement for CD-021 (Shopify sync):** the sync updates only store-owned columns (title,
 description, type, tags, images, SKU, vendor) and never `facts`, as the product page promises.
+
+**CD-024 ticked.** The reviewer approved after two rounds, and CI is green at e4e971e, including
+the product-page Playwright flow: edit facts, then a confirmed code turns Outdated on the next
+edit. The tick commit also trims stored facts the same way the form does (so an untouched save
+never looks like a change) and names vendor in the store-sync banner.

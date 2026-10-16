@@ -81,8 +81,8 @@ export function ProductForm({
       {synced && (
         <p className="text-muted text-sm">
           This product comes from your store. The next store sync may replace
-          the title, description, type, tags and images; the facts you add here
-          are kept.
+          the title, description, type, vendor, tags and images; the facts you
+          add here are kept.
         </p>
       )}
       <Text

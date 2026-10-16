@@ -239,3 +239,35 @@ describe("readFacts and the agent's questions", () => {
     expect(factsSchema.safeParse(facts).success).toBe(true);
   });
 });
+
+describe("readFacts trims like the edit schema", () => {
+  it("so an untouched save finds no change in untrimmed stored facts", () => {
+    const stored = {
+      title: "Tee",
+      description: null,
+      product_type: null,
+      vendor: null,
+      tags: [],
+      image_urls: [],
+      origin_country: null,
+      customs_value: null,
+      currency: null,
+      weight_kg: null,
+      facts: {
+        materials: [{ name: " Cotton ", percent: " 100 " }],
+        function: " T-shirt ",
+      },
+    };
+    const edit = productEditSchema.parse(
+      formToProductEdit(
+        form({
+          title: "Tee",
+          material_0_name: "Cotton",
+          material_0_percent: "100",
+          function: "T-shirt",
+        }),
+      ),
+    );
+    expect(changedColumns(edit, stored)).toEqual({});
+  });
+});
