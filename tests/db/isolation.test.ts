@@ -123,7 +123,7 @@ const INSERT: Record<string, Insert> = {
 };
 const TENANT_TABLES = Object.keys(INSERT);
 // Read-only views over tenant tables (security_invoker, so the tables' policies apply).
-const TENANT_VIEWS = ["catalog_items"];
+const TENANT_VIEWS = ["catalog_items", "review_queue"];
 
 // The id keys that identify the inserted row itself (everything else in Ids is a parent).
 const OWN_ID: Record<string, string[]> = {
@@ -364,6 +364,12 @@ suite("tenant isolation (live database)", () => {
         "insert into products (id, workspace_id, title) values ($1, $2, 'Second product')",
         [id[w].product2, ws[w]],
       );
+    // A current suggested code, so the review_queue view has a row in each workspace.
+    for (const w of ["A", "B"] as const)
+      await db.query(
+        "insert into classifications (workspace_id, product_id, code, status) values ($1, $2, '6109100012', 'suggested')",
+        [ws[w], id[w].product2],
+      );
     for (const sql of Object.values(SHARED_SEED)) await db.query(sql);
     await db.query("commit");
   });
@@ -442,7 +448,7 @@ suite("tenant isolation (live database)", () => {
 
     it("cannot be written through", async () => {
       for (const sql of [
-        `update ${view} set title = 'x'`,
+        `update ${view} set id = id`,
         `delete from ${view}`,
         `insert into ${view} (id) values (gen_random_uuid())`,
       ]) {

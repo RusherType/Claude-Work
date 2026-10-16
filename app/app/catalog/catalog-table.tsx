@@ -6,6 +6,7 @@ import { toCsv } from "@/lib/catalog/csv";
 import { formatHtsCode, type CatalogStatus } from "@/lib/catalog/listing";
 import { primary, secondary } from "@/lib/ui/styles";
 import { download } from "@/lib/ui/download";
+import { HtsCode } from "../_classification/hts-code";
 import { StatusChip } from "./status-chip";
 
 export type CatalogRow = {
@@ -234,34 +235,6 @@ function Confidence({ row }: { row: CatalogRow }) {
   return (
     <span className="text-muted ml-1 text-xs">
       {Math.round(row.confidence * 100)}% sure
-    </span>
-  );
-}
-
-/** HTS code as 6109.10.0012 in mono, with a copy button. */
-function HtsCode({ code }: { code: string | null }) {
-  const [copied, setCopied] = useState(false);
-  if (!code) return <span className="font-mono text-xs">—</span>;
-  const text = formatHtsCode(code);
-  return (
-    <span className="inline-flex items-center gap-1">
-      <span className="font-mono text-xs">{text}</span>
-      <button
-        type="button"
-        className="text-brand text-xs underline"
-        aria-label={`Copy HTS code ${text}`}
-        onClick={async () => {
-          try {
-            await navigator.clipboard.writeText(text);
-            setCopied(true);
-            setTimeout(() => setCopied(false), 1500);
-          } catch {
-            // Clipboard blocked: the code stays visible to copy by hand.
-          }
-        }}
-      >
-        {copied ? "Copied" : "Copy"}
-      </button>
     </span>
   );
 }

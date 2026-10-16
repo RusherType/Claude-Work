@@ -1378,6 +1378,65 @@ export type Database = {
           },
         ];
       };
+      review_queue: {
+        Row: {
+          code: string | null;
+          confidence: number | null;
+          created_at: string | null;
+          id: string | null;
+          market: Database["public"]["Enums"]["market_code"] | null;
+          priority: number | null;
+          product_id: string | null;
+          status: Database["public"]["Enums"]["class_status"] | null;
+          workspace_id: string | null;
+        };
+        ComputedFields: never;
+        Insert: {
+          code?: string | null;
+          confidence?: number | null;
+          created_at?: string | null;
+          id?: string | null;
+          market?: Database["public"]["Enums"]["market_code"] | null;
+          priority?: never;
+          product_id?: string | null;
+          status?: Database["public"]["Enums"]["class_status"] | null;
+          workspace_id?: string | null;
+        };
+        Update: {
+          code?: string | null;
+          confidence?: number | null;
+          created_at?: string | null;
+          id?: string | null;
+          market?: Database["public"]["Enums"]["market_code"] | null;
+          priority?: never;
+          product_id?: string | null;
+          status?: Database["public"]["Enums"]["class_status"] | null;
+          workspace_id?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "classifications_workspace_id_fkey";
+            columns: ["workspace_id"];
+            isOneToOne: false;
+            referencedRelation: "workspaces";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "classifications_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
+            referencedRelation: "catalog_items";
+            referencedColumns: ["workspace_id", "id"];
+          },
+          {
+            foreignKeyName: "classifications_workspace_id_product_id_fkey";
+            columns: ["workspace_id", "product_id"];
+            isOneToOne: false;
+            referencedRelation: "products";
+            referencedColumns: ["workspace_id", "id"];
+          },
+        ];
+      };
     };
     Functions: {
       accept_invitation: { Args: { p_token: string }; Returns: string };
@@ -1421,6 +1480,10 @@ export type Database = {
         Args: { p_max_length: number; p_pattern: string; p_values: string[] };
         Returns: boolean;
       };
+      answer_agent_question: {
+        Args: { p_answer: string; p_question: string };
+        Returns: undefined;
+      };
       catalog_facets: {
         Args: { p_workspace_id: string };
         Returns: {
@@ -1428,6 +1491,10 @@ export type Database = {
           products: number;
           value: string;
         }[];
+      };
+      confirm_classification: {
+        Args: { p_classification: string; p_content_hash: string };
+        Returns: string;
       };
       create_invitation: {
         Args: {
@@ -1456,6 +1523,14 @@ export type Database = {
         };
         Returns: boolean;
       };
+      hts_breadcrumb: {
+        Args: { p_code: string; p_revision: string };
+        Returns: {
+          code: string;
+          description: string;
+          indent: number;
+        }[];
+      };
       import_products: {
         Args: { p_rows: Json; p_workspace_id: string };
         Returns: {
@@ -1465,6 +1540,10 @@ export type Database = {
         }[];
       };
       is_clean_text: { Args: { p_value: string }; Returns: boolean };
+      is_filing_code: {
+        Args: { p_code: string; p_revision: string };
+        Returns: boolean;
+      };
       is_member: { Args: { ws: string }; Returns: boolean };
       is_not_blank: { Args: { p_value: string }; Returns: boolean };
       is_platform_admin: { Args: Record<PropertyKey, never>; Returns: boolean };
@@ -1495,6 +1574,17 @@ export type Database = {
         Args: Record<PropertyKey, never>;
         Returns: number;
       };
+      override_classification: {
+        Args: {
+          p_code: string;
+          p_content_hash: string;
+          p_expected: string;
+          p_market?: Database["public"]["Enums"]["market_code"];
+          p_product: string;
+          p_reason: string;
+        };
+        Returns: string;
+      };
       product_content_hash: {
         Args: {
           p_currency: string;
@@ -1510,6 +1600,24 @@ export type Database = {
         Returns: string;
       };
       record_mfa_event: { Args: { p_kind: string }; Returns: undefined };
+      review_position: {
+        Args: {
+          p_at?: string;
+          p_market?: Database["public"]["Enums"]["market_code"];
+          p_workspace: string;
+        };
+        Returns: {
+          id: string;
+          next_id: string;
+          position: number;
+          prev_id: string;
+          total: number;
+        }[];
+      };
+      revision_in_force: {
+        Args: { p_market: Database["public"]["Enums"]["market_code"] };
+        Returns: string;
+      };
       revoke_invitation: { Args: { p_invitation: string }; Returns: undefined };
       show_limit: { Args: Record<PropertyKey, never>; Returns: number };
       show_trgm: { Args: { "": string }; Returns: string[] };

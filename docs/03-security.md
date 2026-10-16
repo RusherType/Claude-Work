@@ -56,6 +56,7 @@ Every row of customer data belongs to one workspace, and Postgres Row Level Secu
 ## Audit, privacy and retention
 
 - `audit_log` append-only (no update/delete policy).
+- Code decisions are made only through database functions (`confirm_classification`, `override_classification`, `answer_agent_question`): they check the role and that the person saw the current product and code, and write the audit row in the same transaction. An override keeps the replaced code as history with the reason given.
 - Business and catalog data only; order data deleted after 90 days.
 - GDPR/UK GDPR: DPA, subprocessor list (Supabase, Vercel, Anthropic, Voyage, Stripe, Resend, Inngest, Sentry, PostHog), export/delete within 30 days.
 - Point-in-time recovery on; restore tested before launch.

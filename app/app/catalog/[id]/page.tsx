@@ -1,17 +1,22 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import { COUNTRIES } from "@/lib/countries";
 import { readFacts } from "@/lib/catalog/facts";
-import { formatHtsCode, type CatalogStatus } from "@/lib/catalog/listing";
+import type { CatalogStatus } from "@/lib/catalog/listing";
+import { loadCard } from "@/lib/classification/card";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceContext } from "@/lib/workspace";
-import { StatusChip } from "../status-chip";
+import { ClassificationCard } from "../../_classification/classification-card";
 import { ProductForm, type ProductValues } from "./product-form";
 
 export const metadata: Metadata = { title: "Product · ClearDuty" };
 
-const COUNTRY_NAMES = new Map(COUNTRIES.map((c) => [c.code, c.name]));
+const DECIDED: Record<string, string> = {
+  confirmed: "Code confirmed.",
+  overridden: "Your code is saved and confirmed.",
+  answered:
+    "Answer saved. The agent will use it when it checks this product again.",
+};
 
 export default async function ProductPage(
   props: PageProps<"/app/catalog/[id]">,
@@ -20,36 +25,27 @@ export default async function ProductPage(
   if (!ctx) redirect("/sign-in?next=/app/catalog");
   if (!ctx.workspace) redirect("/app");
   const { id } = await props.params;
-  const { saved } = await props.searchParams;
+  const { saved, decided } = await props.searchParams;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
   const supabase = await createClient();
   if (!supabase) throw new Error("Supabase is not configured");
   // Errors surface through app/app/error.tsx (plain message + retry).
-  const [product, classification] = await Promise.all([
+  const [product, card] = await Promise.all([
     supabase
       .from("products")
       .select(
-        "id, workspace_id, sku, title, description, product_type, vendor, tags, image_urls, origin_country, customs_value::text, currency, weight_kg::text, facts, updated_at::text, integration_id",
+        "id, workspace_id, sku, title, description, product_type, vendor, tags, image_urls, origin_country, customs_value::text, currency, weight_kg::text, facts, updated_at::text, integration_id, content_hash",
       )
       .eq("id", id)
       .eq("workspace_id", ctx.workspace.id)
       .maybeSingle(),
-    supabase
-      .from("classifications")
-      .select("code, status, confidence, created_at")
-      .eq("product_id", id)
-      .eq("is_current", true)
-      .eq("market", "US")
-      .maybeSingle(),
+    loadCard(supabase, ctx.workspace.id, id),
   ]);
-  if (product.error || classification.error)
-    throw new Error("Could not load the product");
+  if (product.error) throw new Error("Could not load the product");
   if (!product.data) notFound();
   const p = product.data;
-  const c = classification.data;
-  const status: CatalogStatus =
-    (c?.status as CatalogStatus | undefined) ?? "unclassified";
+  const status: CatalogStatus = card.current?.status ?? "unclassified";
   const canEdit = ctx.workspace.role !== "viewer";
   const facts = readFacts(p.facts);
   const values: ProductValues = {
@@ -97,7 +93,13 @@ export default async function ProductPage(
         </p>
       )}
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+      {decided && DECIDED[String(decided)] && (
+        <p role="status" className="text-confirmed text-sm">
+          {DECIDED[String(decided)]}
+        </p>
+      )}
+
+      <div className="grid gap-6 lg:grid-cols-[1fr_24rem]">
         <section
           aria-labelledby="details-heading"
           className="flex flex-col gap-3"
@@ -118,37 +120,13 @@ export default async function ProductPage(
           )}
         </section>
 
-        <aside
-          aria-labelledby="code-heading"
-          className="border-border bg-surface flex h-fit flex-col gap-3 rounded-lg border p-4"
-        >
-          <h2 id="code-heading" className="text-base font-semibold">
-            Tariff code
-          </h2>
-          <StatusChip status={status} />
-          {c?.code ? (
-            <p className="font-mono text-lg">{formatHtsCode(c.code)}</p>
-          ) : (
-            <p className="text-muted text-sm">
-              Not classified yet. Suggested codes arrive with the AI agent.
-            </p>
-          )}
-          {c?.status === "suggested" && c.confidence !== null && (
-            <p className="text-muted text-sm">
-              {Math.round(c.confidence * 100)}% sure. Suggested, not confirmed.
-            </p>
-          )}
-          {c?.created_at && (
-            <p className="text-muted text-xs">
-              Last checked {c.created_at.slice(0, 10)}
-            </p>
-          )}
-          {p.origin_country && (
-            <p className="text-muted text-xs">
-              Origin: {COUNTRY_NAMES.get(p.origin_country) ?? p.origin_country}
-            </p>
-          )}
-        </aside>
+        <ClassificationCard
+          data={card}
+          productId={p.id}
+          contentHash={p.content_hash ?? ""}
+          canDecide={canEdit}
+          origin={{ from: "product" }}
+        />
       </div>
     </div>
   );

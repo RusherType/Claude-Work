@@ -385,3 +385,42 @@ description, type, tags, images, SKU, vendor) and never `facts`, as the product 
 the product-page Playwright flow: edit facts, then a confirmed code turns Outdated on the next
 edit. The tick commit also trims stored facts the same way the form does (so an untouched save
 never looks like a change) and names vendor in the store-sync banner.
+
+**CD-040 to CD-042 (review queue, confirm and override, classification card):**
+- **Database (`0006_review.sql`):**
+  - the `review_queue` view (security invoker) and `review_position`;
+  - `confirm_classification`, `override_classification` and `answer_agent_question`, each
+    checking the role, a live workspace, and that the person saw the current product content
+    and code, then writing an audit row;
+  - `revision_in_force`, `is_filing_code` and `hts_breadcrumb`.
+  - Codes are confirmed only against a 10-digit leaf of the tariff in force today.
+- **Queue page `/app/review`:**
+  - one product at a time, questions first, with the product's facts beside the card;
+  - keys A (confirm), E (edit product), Q (focus the first answer), J and K (next, previous),
+    ignored while typing or with a dialog open;
+  - "Confirm and next" moves on;
+  - an empty state;
+  - a badge on the nav link.
+- **Card (product page and queue):**
+  - status, code with copy, "Suggested" until confirmed, a 5-segment confidence bar with the
+    low-confidence note under 0.6;
+  - tariff breadcrumb, reasoning collapsed to 3 lines, rules applied, other codes considered,
+    evidence and a rulings drawer;
+  - agent questions as answer chips plus "Other";
+  - confirm, or "Use a different code" with a reason;
+  - who confirmed and when, and earlier codes.
+- **Tests:**
+  - unit: decision inputs, return targets (no open redirects), refusal messages, readers for the
+    agent's output;
+  - database (19 tests, with mutation checks): roles, stale views, statuses, unknown codes,
+    history, audit rows, queue order and neighbours, the breadcrumb;
+  - the isolation suite now covers `review_queue`;
+  - Playwright: answer with Q, read the evidence, confirm with A, see the catalog chip change,
+    override with a reason.
+- **For the agent (CD-032 to CD-034):**
+  - write `alternatives`, `citations`, `gri_path` and question `options` in the shapes in
+    `docs/06-schema.md`;
+  - never replace a confirmed or overridden current code without a person;
+  - re-run products whose code went back to `queued` after an answer;
+  - a product edit leaves a `suggested` code as it is (only confirmed codes go Outdated), so the
+    agent should re-check suggestions when the content hash changes.

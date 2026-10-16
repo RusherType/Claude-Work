@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { isPlatformAdmin } from "@/lib/admin/access";
+import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceContext } from "@/lib/workspace";
 import { signOut } from "./actions";
 import { switchWorkspace } from "./workspace-actions";
@@ -9,7 +10,10 @@ import { switchWorkspace } from "./workspace-actions";
 export default async function AppLayout({ children }: LayoutProps<"/app">) {
   const ctx = await getWorkspaceContext();
   if (!ctx) redirect("/sign-in?next=/app");
-  const admin = await isPlatformAdmin(ctx.user.id);
+  const [admin, queued] = await Promise.all([
+    isPlatformAdmin(ctx.user.id),
+    ctx.workspace ? reviewCount(ctx.workspace.id) : null,
+  ]);
 
   return (
     <div className="flex min-h-full flex-1 flex-col">
@@ -44,6 +48,15 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
             <>
               <Link href="/app/catalog" className="text-sm">
                 Catalog
+              </Link>
+              <Link href="/app/review" className="text-sm">
+                Review queue
+                {queued ? (
+                  <span className="bg-review dark:text-background ml-1 rounded-full px-1.5 py-0.5 text-xs font-medium text-white">
+                    {queued > 999 ? "999+" : queued}
+                    <span className="sr-only"> to review</span>
+                  </span>
+                ) : null}
               </Link>
               <Link href="/app/catalog/import" className="text-sm">
                 Import products
@@ -81,4 +94,16 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
       </div>
     </div>
   );
+}
+
+/** How many codes wait for a person (the sidebar badge); null when it can't be read. */
+async function reviewCount(workspaceId: string): Promise<number | null> {
+  const supabase = await createClient();
+  if (!supabase) return null;
+  const { count, error } = await supabase
+    .from("review_queue")
+    .select("id", { count: "exact", head: true })
+    .eq("workspace_id", workspaceId)
+    .eq("market", "US");
+  return error ? null : count;
 }

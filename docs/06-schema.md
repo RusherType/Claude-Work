@@ -75,7 +75,8 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 ## Database functions
 
 - `is_member(ws)`, `has_role(ws, roles[])`, `is_platform_admin()` — RLS helpers.
-- `current_revision(market)` — latest imported revision.
+- `current_revision(market)` — latest imported revision (may not be in force yet; decisions use
+  `revision_in_force`).
 - `match_tariff_lines(embedding, revision_id, k)` and `match_rulings(embedding, hts_prefix, k)` — vector search for agent tools (revoked rulings excluded; `k` is clamped to 1–50).
 - `active_measures(code, origin, mode, on_date)` — published overlays that apply.
 - `content_hash` is computed by the database (`product_content_hash`, SHA-256) from everything the code can depend on: title, description, product type, tags, facts, images, customs value and currency, and weight (some HTS lines split on value or weight). A value sent by a client is never stored. Trigger `products_outdated` marks a confirmed or broker-verified code `outdated` when that hash changes (or when a client sends a different hash: a needless re-check at worst). Vendor and origin do not mark codes outdated.
@@ -145,6 +146,39 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   code Outdated.
 - Product edits from the page are conditional on the `updated_at` the page loaded (as text, to
   keep microseconds), so a save never overwrites a newer edit.
+
+- **Review and decisions (CD-040 to CD-042, `0006_review.sql`):**
+  - **Tariff in force:** `revision_in_force(market)` is the latest revision whose
+    `effective_from` is today or earlier (`current_revision` also returns future ones).
+    `is_filing_code(revision, code)` is true for a 10-digit leaf line of that revision.
+    `hts_breadcrumb(revision, code)` returns the heading, each parent line and the line itself;
+    lines are in schedule order (`tariff_lines.id`), so a line's parent at each indent is the
+    closest line above it with that indent.
+  - **Queue:** `review_queue` is a security-invoker view of current codes that need a person
+    (`needs_answer`, `in_review`, `outdated`, `suggested`, in that priority, oldest first).
+    `review_position(workspace, at, market)` returns the item at `at` (or the first one), the
+    previous and next ids, its position and the total.
+  - **Confirm:** `confirm_classification(classification, content_hash)` is for owners, admins and
+    members of a live workspace. It accepts the current code only, and only when the product's
+    content hash is the one the person saw. The code must be `suggested`, `in_review` or
+    `outdated` and be a filing line of the tariff in force. It sets `confirmed`, `confirmed_by`,
+    `confirmed_at` and the revision, and writes `classification.confirm` to `audit_log`.
+  - **Override:** `override_classification(product, expected, code, reason, content_hash,
+    market)` has the same checks; `expected` is the current classification the person saw (null
+    when the product had none). It needs a 3–500 character reason. The old row stays as history
+    (`is_current = false`); the new row is `confirmed` with source `override`. It writes
+    `classification.override` with the previous code and the reason.
+  - **Answers:** `answer_agent_question(question, answer)` takes a 1–300 character answer, once.
+    When the product has no open questions left, its `needs_answer` code goes back to `queued`
+    for the agent (CD-034 starts the re-run). It writes `question.answer`.
+  - **Errors:** 42501 not allowed, 22023 invalid input, P0001 `stale`, `not_confirmable`,
+    `unknown_code`, `already_answered`. Confirm and override lock the product row first, then
+    the classification (the same order as the product triggers).
+  - **Agent output (CD-032 writes, CD-042 shows):** `alternatives` is
+    `[{ code (10 digits), why }]` (at most 5 shown), `citations` is
+    `[{ kind: 'ruling', number, note? } | { kind: 'note', ref, note? }]`, `gri_path` is
+    `['GRI 1', 'GRI 6', ...]`, and `agent_questions.options` is 2–5 answer strings. The page reads
+    them leniently (`lib/classification/result.ts`) and leaves out anything malformed.
 
 ## Tests
 
