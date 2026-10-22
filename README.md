@@ -2,7 +2,7 @@
 
 AI tariff classification and landed-cost tool for cross-border e-commerce sellers. US first.
 
-Ticket CD-001 (scaffold) is done. Everything else is planned in `docs/`.
+Phase 1 is partly built: schema, auth, workspaces and team, tenant-isolation tests, CI, the HTS importer and the rate parser. See `docs/progress.md` for what is done and what each remaining ticket needs.
 
 ## What's in here
 
@@ -25,11 +25,15 @@ Ticket CD-001 (scaffold) is done. Everything else is planned in `docs/`.
 
 ```powershell
 pnpm install
-pnpm test
+supabase start          # needs Docker Desktop; applies every migration
+copy .env.example .env.local   # then paste the URL and keys `supabase start` printed
+pnpm hts:import         # optional: loads the current US tariff schedule (~5 minutes)
 pnpm dev
 ```
 
-Open http://localhost:3000.
+Open http://localhost:3000 and sign in with any email; the magic link arrives in the local
+mail inbox at http://127.0.0.1:54324. Tests: `pnpm test` (unit), `pnpm test:db` (database),
+`pnpm build` then `E2E_PROD=1 pnpm test:e2e` (browser).
 
 ## Start Claude Code
 

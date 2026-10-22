@@ -2,7 +2,7 @@
 
 Tenant data is scoped by `workspace_id` and protected by RLS; shared reference data (tariff lines, rulings, measures, fees) is readable by any signed-in user and written only by the service role. Everything that changes over time carries effective dates.
 
-**The migrations in `supabase/migrations/` are the source of truth** (`0001_init.sql` schema, `0002_workspaces_invites.sql` onboarding and invitations); update this file when they change.
+**The migrations in `supabase/migrations/` are the source of truth** (`0001_init.sql` schema, `0002_workspaces_invites.sql` onboarding and invitations, `0003_workspace_members.sql` team list, `0004_tariff_import.sql` import bookkeeping); update this file when they change.
 
 ## Tables
 
@@ -22,7 +22,7 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 | `subscriptions` | Tenant | Stripe billing state | Service role only (webhooks) |
 | `api_keys` | Tenant | Hashed API keys | Owner/admin |
 | `audit_log` | Tenant | Append-only decision record | Insert only |
-| `tariff_revisions`, `tariff_lines` | Shared | Each schedule release and its lines + embeddings | Service role |
+| `tariff_revisions`, `tariff_lines` | Shared | Each schedule release (`status` importing/complete/failed, `line_count`) and its lines + embeddings, keyed by schedule `position`; `rate` holds the parsed general/special/column 2 rates and `inherited_from` for statistical lines | Service role |
 | `rulings`, `ruling_chunks` | Shared | CBP rulings and embedded chunks | Service role |
 | `tariff_measures` | Shared | Chapter 99 overlays by line, origin, mode, date | Platform admin |
 | `fee_schedules` | Shared | MPF, HMF, carrier fees by date | Service role |
@@ -44,7 +44,8 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 ## Database functions
 
 - `is_member(ws)`, `has_role(ws, roles[])`, `is_platform_admin()` — RLS helpers.
-- `current_revision(market)` — latest imported revision.
+- `current_revision(market)` — latest revision whose import is complete.
+- `workspace_members(ws)` — members with email and role, for members of `ws` only.
 - `match_tariff_lines(embedding, revision_id, k)` and `match_rulings(embedding, hts_prefix, k)` — vector search for agent tools (revoked rulings excluded).
 - `active_measures(code, origin, mode, on_date)` — published overlays that apply.
 - Trigger `products_outdated` — a changed `content_hash` on a confirmed product marks its classification `outdated`.
