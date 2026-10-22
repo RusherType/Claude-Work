@@ -2,13 +2,14 @@
 
 Tenant data is scoped by `workspace_id` and protected by RLS; shared reference data (tariff lines, rulings, measures, fees) is readable by any signed-in user and written only by the service role. Everything that changes over time carries effective dates.
 
-**The full migration is `supabase/migrations/0001_init.sql`.** It is the source of truth; update this file when it changes.
+**The migrations in `supabase/migrations/` are the source of truth** (`0001_init.sql` schema, `0002_workspaces_invites.sql` onboarding and invitations); update this file when they change.
 
 ## Tables
 
 | Table | Kind | Holds | Write access |
 | --- | --- | --- | --- |
-| `workspaces`, `memberships`, `profiles` | Tenant | Companies, members, roles | Owner/admin |
+| `workspaces`, `memberships`, `profiles` | Tenant | Companies, members, roles | Owner/admin (admins cannot add, change or remove owners; a workspace always keeps one owner) |
+| `invitations` | Tenant | Pending email invites; only a SHA-256 hash of the link token is stored; never role `owner` | Owner/admin |
 | `integrations` | Tenant | Shopify shop, Vault secret id for token | Owner/admin |
 | `products` | Tenant | Catalog items and extracted facts | Owner/admin/member |
 | `classifications` | Tenant | Every code suggested/confirmed/overridden/verified, per market; one current per product+market | Owner/admin/member |
@@ -47,3 +48,8 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
 - `match_tariff_lines(embedding, revision_id, k)` and `match_rulings(embedding, hts_prefix, k)` — vector search for agent tools (revoked rulings excluded).
 - `active_measures(code, origin, mode, on_date)` — published overlays that apply.
 - Trigger `products_outdated` — a changed `content_hash` on a confirmed product marks its classification `outdated`.
+- Trigger `on_auth_user_created` — creates the `profiles` row for every new auth user. Users can update only `full_name`; `is_platform_admin` is set by the service role.
+- Trigger `memberships_keep_owner` — blocks demoting or removing the last owner.
+- `create_workspace(name, home_country, business_type)` — creates the workspace, the caller's owner membership and an audit row in one transaction (there is no insert policy on `workspaces` or `memberships`).
+- `accept_invitation(token)` — checks the token hash, expiry, revocation and that the caller's email matches the invite, then adds the membership.
+- `audit_log` inserts must carry `actor_id = auth.uid()`.
