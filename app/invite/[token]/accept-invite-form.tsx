@@ -4,7 +4,10 @@ import { useActionState } from "react";
 import { acceptInvite, type AcceptState } from "./actions";
 
 export function AcceptInviteForm({ token }: { token: string }) {
-  const [state, action, pending] = useActionState<AcceptState, FormData>(acceptInvite, { status: "idle" });
+  const [state, action, pending] = useActionState<AcceptState, FormData>(
+    acceptInvite,
+    { status: "idle" },
+  );
   return (
     <form action={action} className="flex flex-col gap-3">
       <input type="hidden" name="token" value={token} />

@@ -27,7 +27,11 @@ export async function listWorkspaces(): Promise<WorkspaceMembership[]> {
     .is("workspaces.deleted_at", null);
   if (error) throw error;
   return data
-    .map((m) => ({ id: m.workspaces.id, name: m.workspaces.name, role: m.role }))
+    .map((m) => ({
+      id: m.workspaces.id,
+      name: m.workspaces.name,
+      role: m.role,
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
@@ -39,7 +43,9 @@ export async function getCurrentWorkspace(): Promise<WorkspaceMembership | null>
 }
 
 export class ForbiddenError extends Error {
-  constructor(message = "You don't have permission to do that in this workspace.") {
+  constructor(
+    message = "You don't have permission to do that in this workspace.",
+  ) {
     super(message);
     this.name = "ForbiddenError";
   }

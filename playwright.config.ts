@@ -16,7 +16,9 @@ export default defineConfig({
   ],
   webServer: {
     // E2E_PROD=1 tests the production build (run `pnpm build` first); CI always does.
-    command: process.env.E2E_PROD ? `pnpm start --port ${port}` : `pnpm dev --port ${port}`,
+    command: process.env.E2E_PROD
+      ? `pnpm start --port ${port}`
+      : `pnpm dev --port ${port}`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

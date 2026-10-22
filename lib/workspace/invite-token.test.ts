@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { INVITE_TOKEN_PATTERN, generateInviteToken, hashInviteToken } from "./invite-token";
+import {
+  INVITE_TOKEN_PATTERN,
+  generateInviteToken,
+  hashInviteToken,
+} from "./invite-token";
 
 describe("invite tokens", () => {
   it("hashes like Postgres digest(token, 'sha256') in hex", () => {

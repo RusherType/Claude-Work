@@ -7,13 +7,28 @@ const field =
   "border-border bg-surface focus-visible:ring-brand w-full rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none";
 
 const businessTypes = [
-  { value: "dtc_to_us", label: "I sell to US shoppers", hint: "Shipping orders to US customers" },
-  { value: "importer", label: "I import inventory", hint: "Bringing stock into the US" },
+  {
+    value: "dtc_to_us",
+    label: "I sell to US shoppers",
+    hint: "Shipping orders to US customers",
+  },
+  {
+    value: "importer",
+    label: "I import inventory",
+    hint: "Bringing stock into the US",
+  },
   { value: "both", label: "Both", hint: "" },
 ];
 
-export function CreateWorkspaceForm({ countries }: { countries: { code: string; name: string }[] }) {
-  const [state, action, pending] = useActionState<FormState, FormData>(createWorkspace, { status: "idle" });
+export function CreateWorkspaceForm({
+  countries,
+}: {
+  countries: { code: string; name: string }[];
+}) {
+  const [state, action, pending] = useActionState<FormState, FormData>(
+    createWorkspace,
+    { status: "idle" },
+  );
 
   return (
     <form action={action} className="flex flex-col gap-5">
@@ -21,14 +36,27 @@ export function CreateWorkspaceForm({ countries }: { countries: { code: string; 
         <label htmlFor="name" className="text-sm font-medium">
           Company name
         </label>
-        <input id="name" name="name" required maxLength={80} autoComplete="organization" className={field} />
+        <input
+          id="name"
+          name="name"
+          required
+          maxLength={80}
+          autoComplete="organization"
+          className={field}
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
         <label htmlFor="homeCountry" className="text-sm font-medium">
           Home country
         </label>
-        <select id="homeCountry" name="homeCountry" required defaultValue="" className={field}>
+        <select
+          id="homeCountry"
+          name="homeCountry"
+          required
+          defaultValue=""
+          className={field}
+        >
           <option value="" disabled>
             Choose a country
           </option>
@@ -47,10 +75,18 @@ export function CreateWorkspaceForm({ countries }: { countries: { code: string; 
             key={t.value}
             className="border-border bg-surface has-[:checked]:border-brand flex cursor-pointer items-start gap-3 rounded-md border px-3 py-2.5 text-sm"
           >
-            <input type="radio" name="businessType" value={t.value} required className="accent-brand mt-0.5" />
+            <input
+              type="radio"
+              name="businessType"
+              value={t.value}
+              required
+              className="accent-brand mt-0.5"
+            />
             <span>
               <span className="font-medium">{t.label}</span>
-              {t.hint && <span className="text-muted block text-xs">{t.hint}</span>}
+              {t.hint && (
+                <span className="text-muted block text-xs">{t.hint}</span>
+              )}
             </span>
           </label>
         ))}

@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import { safeNextPath } from "./redirect";
 
 describe("safeNextPath", () => {
-  it.each(["/app", "/app/catalog?status=suggested", "/invite/abc"])("keeps %s", (path) => {
-    expect(safeNextPath(path)).toBe(path);
-  });
+  it.each(["/app", "/app/catalog?status=suggested", "/invite/abc"])(
+    "keeps %s",
+    (path) => {
+      expect(safeNextPath(path)).toBe(path);
+    },
+  );
 
   it.each([
     null,

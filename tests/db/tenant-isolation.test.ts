@@ -17,10 +17,14 @@ import type { Database } from "@/lib/supabase/types";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:54321";
 const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
-const sql = postgres(process.env.SUPABASE_DB_URL ?? "postgresql://postgres:postgres@127.0.0.1:54322/postgres", {
-  max: 2,
-  onnotice: () => {},
-});
+const sql = postgres(
+  process.env.SUPABASE_DB_URL ??
+    "postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+  {
+    max: 2,
+    onnotice: () => {},
+  },
+);
 
 type Client = SupabaseClient<Database>;
 type Tenant = { client: Client; userId: string; workspaceId: string };
@@ -45,13 +49,23 @@ const UPDATE_COLUMN: Record<string, [string, unknown]> = {
   subscriptions: ["plan", "pro"],
 };
 
-async function signUp(label: string): Promise<{ client: Client; userId: string }> {
-  const admin = createClient<Database>(url, serviceKey, { auth: { persistSession: false } });
+async function signUp(
+  label: string,
+): Promise<{ client: Client; userId: string }> {
+  const admin = createClient<Database>(url, serviceKey, {
+    auth: { persistSession: false },
+  });
   const email = `${label}-${randomUUID()}@clearduty.test`;
   const password = randomBytes(18).toString("base64url");
-  const { data, error } = await admin.auth.admin.createUser({ email, password, email_confirm: true });
+  const { data, error } = await admin.auth.admin.createUser({
+    email,
+    password,
+    email_confirm: true,
+  });
   if (error) throw error;
-  const client = createClient<Database>(url, anonKey, { auth: { persistSession: false } });
+  const client = createClient<Database>(url, anonKey, {
+    auth: { persistSession: false },
+  });
   const signIn = await client.auth.signInWithPassword({ email, password });
   if (signIn.error) throw signIn.error;
   return { client, userId: data.user.id };
@@ -59,7 +73,10 @@ async function signUp(label: string): Promise<{ client: Client; userId: string }
 
 async function tenant(label: string): Promise<Tenant> {
   const { client, userId } = await signUp(label);
-  const { data, error } = await client.rpc("create_workspace", { p_name: `${label} Co`, p_home_country: "IN" });
+  const { data, error } = await client.rpc("create_workspace", {
+    p_name: `${label} Co`,
+    p_home_country: "IN",
+  });
   if (error || !data) throw error ?? new Error("no workspace");
   return { client, userId, workspaceId: data };
 }
@@ -67,17 +84,22 @@ async function tenant(label: string): Promise<Tenant> {
 /** One row in every tenant table for this workspace, written as the service role. */
 async function seed(ws: string, userId: string) {
   await sql.begin(async (tx) => {
-    const [integration] = await tx`insert into integrations (workspace_id, provider) values (${ws}, 'csv') returning id`;
-    const [product] = await tx`insert into products (workspace_id, integration_id, title, sku)
+    const [integration] =
+      await tx`insert into integrations (workspace_id, provider) values (${ws}, 'csv') returning id`;
+    const [product] =
+      await tx`insert into products (workspace_id, integration_id, title, sku)
       values (${ws}, ${integration.id}, 'Cotton t-shirt', 'SKU-1') returning id`;
-    const [run] = await tx`insert into agent_runs (workspace_id, product_id, model, prompt_version)
+    const [run] =
+      await tx`insert into agent_runs (workspace_id, product_id, model, prompt_version)
       values (${ws}, ${product.id}, 'test-model', 'v0') returning id`;
     await tx`insert into classifications (workspace_id, product_id, code, agent_run_id)
       values (${ws}, ${product.id}, '6109100012', ${run.id})`;
     await tx`insert into agent_questions (workspace_id, product_id, question) values (${ws}, ${product.id}, 'Knit or woven?')`;
-    const [quote] = await tx`insert into quotes (workspace_id, name) values (${ws}, 'Q1') returning id`;
+    const [quote] =
+      await tx`insert into quotes (workspace_id, name) values (${ws}, 'Q1') returning id`;
     await tx`insert into quote_lines (quote_id, workspace_id, product_id, quantity) values (${quote.id}, ${ws}, ${product.id}, 1)`;
-    const [alert] = await tx`insert into alerts (workspace_id, kind, title) values (${ws}, 'revision', 'New revision') returning id`;
+    const [alert] =
+      await tx`insert into alerts (workspace_id, kind, title) values (${ws}, 'revision', 'New revision') returning id`;
     await tx`insert into alert_items (alert_id, workspace_id, product_id) values (${alert.id}, ${ws}, ${product.id})`;
     await tx`insert into documents (workspace_id, kind, storage_path) values (${ws}, 'classification_sheet', 'x.pdf')`;
     await tx`insert into broker_orders (workspace_id, product_id) values (${ws}, ${product.id})`;
@@ -98,7 +120,10 @@ let tenantTables: string[];
 
 beforeAll(async () => {
   [a, b] = await Promise.all([tenant("alice"), tenant("bob")]);
-  await Promise.all([seed(a.workspaceId, a.userId), seed(b.workspaceId, b.userId)]);
+  await Promise.all([
+    seed(a.workspaceId, a.userId),
+    seed(b.workspaceId, b.userId),
+  ]);
   const tables = await sql`
     select c.table_name from information_schema.columns c
     join information_schema.tables t using (table_schema, table_name)
@@ -126,8 +151,14 @@ describe("coverage", () => {
 
   it("both workspaces have a row in every tenant table", async () => {
     for (const table of tenantTables) {
-      expect((await rowsOf(table, a.workspaceId)).length, `${table} for A`).toBeGreaterThan(0);
-      expect((await rowsOf(table, b.workspaceId)).length, `${table} for B`).toBeGreaterThan(0);
+      expect(
+        (await rowsOf(table, a.workspaceId)).length,
+        `${table} for A`,
+      ).toBeGreaterThan(0);
+      expect(
+        (await rowsOf(table, b.workspaceId)).length,
+        `${table} for B`,
+      ).toBeGreaterThan(0);
     }
   });
 });
@@ -139,45 +170,72 @@ describe("workspace A cannot reach workspace B", () => {
   });
 
   it("cannot rename or delete B's workspace", async () => {
-    await a.client.from("workspaces").update({ name: "hacked" }).eq("id", b.workspaceId);
+    await a.client
+      .from("workspaces")
+      .update({ name: "hacked" })
+      .eq("id", b.workspaceId);
     await a.client.from("workspaces").delete().eq("id", b.workspaceId);
-    const [ws] = await sql`select name from workspaces where id = ${b.workspaceId}`;
+    const [ws] =
+      await sql`select name from workspaces where id = ${b.workspaceId}`;
     expect(ws.name).toBe("bob Co");
   });
 
-  it.each(Object.keys(UPDATE_COLUMN))("%s: no read, update, delete, insert or move", async (table) => {
-    const client = a.client as unknown as SupabaseClient;
-    const before = await rowsOf(table, b.workspaceId);
+  it.each(Object.keys(UPDATE_COLUMN))(
+    "%s: no read, update, delete, insert or move",
+    async (table) => {
+      const client = a.client as unknown as SupabaseClient;
+      const before = await rowsOf(table, b.workspaceId);
 
-    // Read: every visible row belongs to A, and none of B's rows are visible
-    const { data: visible, error: readError } = await client.from(table).select("workspace_id");
-    expect(readError).toBeNull();
-    expect((visible ?? []).every((r) => r.workspace_id === a.workspaceId)).toBe(true);
-    const { data: leaked } = await client.from(table).select("*").eq("workspace_id", b.workspaceId);
-    expect(leaked ?? []).toEqual([]);
+      // Read: every visible row belongs to A, and none of B's rows are visible
+      const { data: visible, error: readError } = await client
+        .from(table)
+        .select("workspace_id");
+      expect(readError).toBeNull();
+      expect(
+        (visible ?? []).every((r) => r.workspace_id === a.workspaceId),
+      ).toBe(true);
+      const { data: leaked } = await client
+        .from(table)
+        .select("*")
+        .eq("workspace_id", b.workspaceId);
+      expect(leaked ?? []).toEqual([]);
 
-    // Update and delete aimed at B: silently filtered by RLS
-    const [column, value] = UPDATE_COLUMN[table];
-    await client.from(table).update({ [column]: value }).eq("workspace_id", b.workspaceId);
-    await client.from(table).delete().eq("workspace_id", b.workspaceId);
-    expect(await rowsOf(table, b.workspaceId)).toEqual(before);
+      // Update and delete aimed at B: silently filtered by RLS
+      const [column, value] = UPDATE_COLUMN[table];
+      await client
+        .from(table)
+        .update({ [column]: value })
+        .eq("workspace_id", b.workspaceId);
+      await client.from(table).delete().eq("workspace_id", b.workspaceId);
+      expect(await rowsOf(table, b.workspaceId)).toEqual(before);
 
-    // Insert into B: rejected
-    const { error: insertError } = await client.from(table).insert({ workspace_id: b.workspaceId });
-    expect(insertError).not.toBeNull();
-    expect(await rowsOf(table, b.workspaceId)).toEqual(before);
+      // Insert into B: rejected
+      const { error: insertError } = await client
+        .from(table)
+        .insert({ workspace_id: b.workspaceId });
+      expect(insertError).not.toBeNull();
+      expect(await rowsOf(table, b.workspaceId)).toEqual(before);
 
-    // Move A's own rows into B: rejected or filtered, never applied
-    const ownBefore = await rowsOf(table, a.workspaceId);
-    await client.from(table).update({ workspace_id: b.workspaceId }).eq("workspace_id", a.workspaceId);
-    expect(await rowsOf(table, b.workspaceId)).toEqual(before);
-    if (table !== "memberships") expect(await rowsOf(table, a.workspaceId)).toEqual(ownBefore);
-  });
+      // Move A's own rows into B: rejected or filtered, never applied
+      const ownBefore = await rowsOf(table, a.workspaceId);
+      await client
+        .from(table)
+        .update({ workspace_id: b.workspaceId })
+        .eq("workspace_id", a.workspaceId);
+      expect(await rowsOf(table, b.workspaceId)).toEqual(before);
+      if (table !== "memberships")
+        expect(await rowsOf(table, a.workspaceId)).toEqual(ownBefore);
+    },
+  );
 
   it("cannot list B's members or accept B's invites without the token", async () => {
-    const { data } = await a.client.rpc("workspace_members", { ws: b.workspaceId });
+    const { data } = await a.client.rpc("workspace_members", {
+      ws: b.workspaceId,
+    });
     expect(data ?? []).toEqual([]);
-    const { error } = await a.client.rpc("accept_invitation", { p_token: "guess" });
+    const { error } = await a.client.rpc("accept_invitation", {
+      p_token: "guess",
+    });
     expect(error).not.toBeNull();
   });
 });
@@ -195,14 +253,23 @@ describe("roles inside a workspace", () => {
   it("a viewer can read but not write catalog data", async () => {
     const { data } = await viewer.client.from("products").select("id");
     expect(data?.length).toBeGreaterThan(0);
-    const { error } = await viewer.client.from("products").insert({ workspace_id: a.workspaceId, title: "x" });
+    const { error } = await viewer.client
+      .from("products")
+      .insert({ workspace_id: a.workspaceId, title: "x" });
     expect(error).not.toBeNull();
   });
 
   it("an admin cannot promote themselves or demote the owner", async () => {
-    await admin.client.from("memberships").update({ role: "owner" }).eq("user_id", admin.userId);
-    await admin.client.from("memberships").update({ role: "viewer" }).eq("user_id", a.userId);
-    const roles = await sql`select user_id, role from memberships where workspace_id = ${a.workspaceId}`;
+    await admin.client
+      .from("memberships")
+      .update({ role: "owner" })
+      .eq("user_id", admin.userId);
+    await admin.client
+      .from("memberships")
+      .update({ role: "viewer" })
+      .eq("user_id", a.userId);
+    const roles =
+      await sql`select user_id, role from memberships where workspace_id = ${a.workspaceId}`;
     const byUser = Object.fromEntries(roles.map((r) => [r.user_id, r.role]));
     expect(byUser[admin.userId]).toBe("admin");
     expect(byUser[a.userId]).toBe("owner");
@@ -218,19 +285,28 @@ describe("roles inside a workspace", () => {
   });
 
   it("audit rows cannot be forged, changed or deleted", async () => {
-    const forged = await viewer.client
-      .from("audit_log")
-      .insert({ workspace_id: a.workspaceId, actor_id: a.userId, action: "forged" });
+    const forged = await viewer.client.from("audit_log").insert({
+      workspace_id: a.workspaceId,
+      actor_id: a.userId,
+      action: "forged",
+    });
     expect(forged.error).not.toBeNull();
     const before = await rowsOf("audit_log", a.workspaceId);
-    await a.client.from("audit_log").update({ action: "changed" }).eq("workspace_id", a.workspaceId);
+    await a.client
+      .from("audit_log")
+      .update({ action: "changed" })
+      .eq("workspace_id", a.workspaceId);
     await a.client.from("audit_log").delete().eq("workspace_id", a.workspaceId);
     expect(await rowsOf("audit_log", a.workspaceId)).toEqual(before);
   });
 
   it("users cannot make themselves platform admin", async () => {
-    await viewer.client.from("profiles").update({ is_platform_admin: true }).eq("id", viewer.userId);
-    const [profile] = await sql`select is_platform_admin from profiles where id = ${viewer.userId}`;
+    await viewer.client
+      .from("profiles")
+      .update({ is_platform_admin: true })
+      .eq("id", viewer.userId);
+    const [profile] =
+      await sql`select is_platform_admin from profiles where id = ${viewer.userId}`;
     expect(profile.is_platform_admin).toBe(false);
   });
 });

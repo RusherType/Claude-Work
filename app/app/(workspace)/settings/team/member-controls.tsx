@@ -2,7 +2,12 @@
 
 import { useState, useTransition } from "react";
 import { ROLE_LABELS, type Role } from "@/lib/auth/roles";
-import { changeRole, removeMember, revokeInvite, type ActionResult } from "./actions";
+import {
+  changeRole,
+  removeMember,
+  revokeInvite,
+  type ActionResult,
+} from "./actions";
 
 function useAction() {
   const [pending, start] = useTransition();
@@ -38,7 +43,11 @@ export function MemberControls({
         id={`role-${userId}`}
         value={role}
         disabled={pending}
-        onChange={(e) => run(() => changeRole({ workspaceId, userId, role: e.target.value as Role }))}
+        onChange={(e) =>
+          run(() =>
+            changeRole({ workspaceId, userId, role: e.target.value as Role }),
+          )
+        }
         className="border-border bg-surface rounded-md border px-2 py-1 text-sm"
       >
         {roles.map((r) => (
@@ -52,7 +61,8 @@ export function MemberControls({
         disabled={pending}
         aria-label={`Remove ${label}`}
         onClick={() => {
-          if (confirm(`Remove ${label} from this workspace?`)) run(() => removeMember({ workspaceId, userId }));
+          if (confirm(`Remove ${label} from this workspace?`))
+            run(() => removeMember({ workspaceId, userId }));
         }}
         className="text-risk rounded-md px-2 py-1 text-sm hover:underline disabled:opacity-60"
       >

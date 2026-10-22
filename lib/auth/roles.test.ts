@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { assignableRoles, can, canManageMember, invitableRoles, type Action, type Role } from "./roles";
+import {
+  assignableRoles,
+  can,
+  canManageMember,
+  invitableRoles,
+  type Action,
+  type Role,
+} from "./roles";
 
 // Rows of the table in docs/03-security.md
 const table: [Action, Role[]][] = [

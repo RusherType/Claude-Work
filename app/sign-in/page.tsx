@@ -9,7 +9,9 @@ const errors: Record<string, string> = {
   google: "Google sign-in isn't available right now. Use your email instead.",
 };
 
-export default async function SignInPage({ searchParams }: PageProps<"/sign-in">) {
+export default async function SignInPage({
+  searchParams,
+}: PageProps<"/sign-in">) {
   const { next, error } = await searchParams;
   const errorMessage = typeof error === "string" ? errors[error] : undefined;
 
@@ -19,11 +21,18 @@ export default async function SignInPage({ searchParams }: PageProps<"/sign-in">
         <Link href="/" className="text-brand text-sm font-medium">
           ClearDuty
         </Link>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight">Sign in or create an account</h1>
-        <p className="text-muted mt-1 text-sm">We&apos;ll email you a link — no password needed.</p>
+        <h1 className="mt-3 text-2xl font-semibold tracking-tight">
+          Sign in or create an account
+        </h1>
+        <p className="text-muted mt-1 text-sm">
+          We&apos;ll email you a link — no password needed.
+        </p>
       </div>
       {errorMessage && (
-        <p role="alert" className="border-risk/40 text-risk rounded-md border px-3 py-2 text-sm">
+        <p
+          role="alert"
+          className="border-risk/40 text-risk rounded-md border px-3 py-2 text-sm"
+        >
           {errorMessage}
         </p>
       )}

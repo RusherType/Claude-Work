@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
-import { ROLE_LABELS, assignableRoles, can, canManageMember, invitableRoles } from "@/lib/auth/roles";
+import {
+  ROLE_LABELS,
+  assignableRoles,
+  can,
+  canManageMember,
+  invitableRoles,
+} from "@/lib/auth/roles";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentWorkspace, requireUser } from "@/lib/workspace/current";
 import { InviteForm } from "./invite-form";
@@ -34,15 +40,23 @@ export default async function TeamPage() {
     <div className="flex max-w-3xl flex-col gap-8">
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Team</h1>
-        <p className="text-muted text-sm">People who can see and work on {workspace.name}.</p>
+        <p className="text-muted text-sm">
+          People who can see and work on {workspace.name}.
+        </p>
       </div>
 
       {manage && (
-        <section aria-labelledby="invite-heading" className="border-border bg-surface rounded-lg border p-5">
+        <section
+          aria-labelledby="invite-heading"
+          className="border-border bg-surface rounded-lg border p-5"
+        >
           <h2 id="invite-heading" className="font-semibold">
             Invite someone
           </h2>
-          <InviteForm workspaceId={workspace.id} roles={invitableRoles(workspace.role)} />
+          <InviteForm
+            workspaceId={workspace.id}
+            roles={invitableRoles(workspace.role)}
+          />
         </section>
       )}
 
@@ -53,14 +67,23 @@ export default async function TeamPage() {
         <ul className="border-border bg-surface divide-border divide-y rounded-lg border">
           {members?.map((m) => {
             const isSelf = m.user_id === user.id;
-            const editable = manage && !isSelf && canManageMember(workspace.role, m.role);
+            const editable =
+              manage && !isSelf && canManageMember(workspace.role, m.role);
             return (
-              <li key={m.user_id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+              <li
+                key={m.user_id}
+                className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-medium">
-                    {m.full_name || m.email} {isSelf && <span className="text-muted font-normal">(you)</span>}
+                    {m.full_name || m.email}{" "}
+                    {isSelf && (
+                      <span className="text-muted font-normal">(you)</span>
+                    )}
                   </p>
-                  {m.full_name && <p className="text-muted truncate text-xs">{m.email}</p>}
+                  {m.full_name && (
+                    <p className="text-muted truncate text-xs">{m.email}</p>
+                  )}
                 </div>
                 {editable ? (
                   <MemberControls
@@ -87,13 +110,24 @@ export default async function TeamPage() {
           {invites && invites.length > 0 ? (
             <ul className="border-border bg-surface divide-border divide-y rounded-lg border">
               {invites.map((i) => (
-                <li key={i.id} className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm">
+                <li
+                  key={i.id}
+                  className="flex flex-wrap items-center gap-3 px-4 py-3 text-sm"
+                >
                   <span className="min-w-0 flex-1 truncate">{i.email}</span>
                   <span className="text-muted">{ROLE_LABELS[i.role]}</span>
                   <span className="text-muted text-xs">
-                    expires {new Date(i.expires_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    expires{" "}
+                    {new Date(i.expires_at).toLocaleDateString("en-US", {
+                      month: "short",
+                      day: "numeric",
+                    })}
                   </span>
-                  <RevokeInviteButton workspaceId={workspace.id} invitationId={i.id} email={i.email} />
+                  <RevokeInviteButton
+                    workspaceId={workspace.id}
+                    invitationId={i.id}
+                    email={i.email}
+                  />
                 </li>
               ))}
             </ul>

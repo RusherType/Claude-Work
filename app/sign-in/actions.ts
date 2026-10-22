@@ -6,7 +6,11 @@ import { safeNextPath } from "@/lib/auth/redirect";
 import { getSiteUrl } from "@/lib/site-url";
 import { createClient } from "@/lib/supabase/server";
 
-export type SignInState = { status: "idle" | "sent" | "error"; message?: string; email?: string };
+export type SignInState = {
+  status: "idle" | "sent" | "error";
+  message?: string;
+  email?: string;
+};
 
 const emailInput = z.object({
   email: z.email("Enter a valid email address").max(254),
@@ -19,13 +23,21 @@ async function callbackUrl(next: string | undefined) {
   return url.toString();
 }
 
-export async function sendMagicLink(_prev: SignInState, formData: FormData): Promise<SignInState> {
+export async function sendMagicLink(
+  _prev: SignInState,
+  formData: FormData,
+): Promise<SignInState> {
   const parsed = emailInput.safeParse({
-    email: String(formData.get("email") ?? "").trim().toLowerCase(),
+    email: String(formData.get("email") ?? "")
+      .trim()
+      .toLowerCase(),
     next: formData.get("next") ?? undefined,
   });
   if (!parsed.success) {
-    return { status: "error", message: parsed.error.issues[0]?.message ?? "Check the email address" };
+    return {
+      status: "error",
+      message: parsed.error.issues[0]?.message ?? "Check the email address",
+    };
   }
 
   const supabase = await createClient();
@@ -46,7 +58,9 @@ export async function sendMagicLink(_prev: SignInState, formData: FormData): Pro
 const oauthInput = z.object({ next: z.string().max(2048).optional() });
 
 export async function signInWithGoogle(formData: FormData) {
-  const { next } = oauthInput.parse({ next: formData.get("next") ?? undefined });
+  const { next } = oauthInput.parse({
+    next: formData.get("next") ?? undefined,
+  });
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",

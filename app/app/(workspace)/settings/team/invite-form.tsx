@@ -7,8 +7,17 @@ import { inviteMember, type InviteState } from "./actions";
 const field =
   "border-border bg-background focus-visible:ring-brand rounded-md border px-3 py-2 text-sm focus-visible:ring-2 focus-visible:outline-none";
 
-export function InviteForm({ workspaceId, roles }: { workspaceId: string; roles: Role[] }) {
-  const [state, action, pending] = useActionState<InviteState, FormData>(inviteMember, { status: "idle" });
+export function InviteForm({
+  workspaceId,
+  roles,
+}: {
+  workspaceId: string;
+  roles: Role[];
+}) {
+  const [state, action, pending] = useActionState<InviteState, FormData>(
+    inviteMember,
+    { status: "idle" },
+  );
   const [copied, setCopied] = useState(false);
 
   return (
@@ -19,13 +28,25 @@ export function InviteForm({ workspaceId, roles }: { workspaceId: string; roles:
           <label htmlFor="invite-email" className="text-sm font-medium">
             Email
           </label>
-          <input id="invite-email" name="email" type="email" required autoComplete="off" className={field} />
+          <input
+            id="invite-email"
+            name="email"
+            type="email"
+            required
+            autoComplete="off"
+            className={field}
+          />
         </div>
         <div className="flex flex-col gap-1.5">
           <label htmlFor="invite-role" className="text-sm font-medium">
             Role
           </label>
-          <select id="invite-role" name="role" defaultValue="member" className={field}>
+          <select
+            id="invite-role"
+            name="role"
+            defaultValue="member"
+            className={field}
+          >
             {roles.map((r) => (
               <option key={r} value={r}>
                 {ROLE_LABELS[r]}
@@ -48,7 +69,10 @@ export function InviteForm({ workspaceId, roles }: { workspaceId: string; roles:
         </p>
       )}
       {state.status === "created" && (
-        <div role="status" className="border-border rounded-md border p-3 text-sm">
+        <div
+          role="status"
+          className="border-border rounded-md border p-3 text-sm"
+        >
           <p>
             {state.emailed
               ? `Invite emailed to ${state.email}. You can also share this link:`
@@ -73,7 +97,9 @@ export function InviteForm({ workspaceId, roles }: { workspaceId: string; roles:
               {copied ? "Copied" : "Copy"}
             </button>
           </div>
-          <p className="text-muted mt-2 text-xs">The link works once, for {state.email} only, for 7 days.</p>
+          <p className="text-muted mt-2 text-xs">
+            The link works once, for {state.email} only, for 7 days.
+          </p>
         </div>
       )}
     </div>

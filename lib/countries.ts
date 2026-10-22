@@ -15,6 +15,7 @@ export function countryName(code: string): string {
   return names.of(code) ?? code;
 }
 
-export const COUNTRIES = COUNTRY_CODES.map((code) => ({ code, name: countryName(code) })).sort((a, b) =>
-  a.name.localeCompare(b.name),
-);
+export const COUNTRIES = COUNTRY_CODES.map((code) => ({
+  code,
+  name: countryName(code),
+})).sort((a, b) => a.name.localeCompare(b.name));
