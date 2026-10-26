@@ -30,7 +30,7 @@ Resend, Sentry, PostHog. Package manager: pnpm. Tests: Vitest (unit), Playwright
 ## Commands
 
 - `pnpm dev` — run the app at http://localhost:3000
-- `pnpm test` — unit tests · `pnpm test:e2e` — Playwright · `pnpm lint` · `pnpm typecheck` · `pnpm format`
+- `pnpm test` — unit tests · `pnpm test:db` — RLS and tenant isolation (needs `supabase start`) · `pnpm test:e2e` — Playwright (`E2E_PROD=1` after `pnpm build` to test the production build; `E2E_PORT` if 3000 is taken) · `pnpm lint` · `pnpm typecheck` · `pnpm format`
 - `supabase start` / `supabase db reset` (local) · `supabase gen types typescript --local > lib/supabase/types.ts`
 
 ## Definition of done for any ticket

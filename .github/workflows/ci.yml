@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NEXT_TELEMETRY_DISABLED: 1
+
+jobs:
+  checks:
+    name: Lint, types, unit tests, build
+    runs-on: ubuntu-latest
+    env:
+      # Build-time placeholders; this job talks to no database
+      NEXT_PUBLIC_SUPABASE_URL: http://127.0.0.1:54321
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ci-placeholder
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm check:secrets
+      - run: pnpm test
+      - run: pnpm audit --prod --audit-level high
+      - run: pnpm build
+
+  database-and-e2e:
+    name: RLS, tenant isolation, e2e
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.118.0
+
+      - name: Start local Supabase (applies every migration)
+        run: supabase start -x studio,imgproxy,edge-runtime,logflare,vector,supavisor,realtime,storage-api
+
+      - name: Export local Supabase settings
+        run: |
+          supabase status -o env \
+            --override-name api.url=NEXT_PUBLIC_SUPABASE_URL \
+            --override-name auth.anon_key=NEXT_PUBLIC_SUPABASE_ANON_KEY \
+            --override-name auth.service_role_key=SUPABASE_SERVICE_ROLE_KEY \
+            --override-name db.url=SUPABASE_DB_URL \
+            --override-name mailpit.url=MAILPIT_URL \
+            | grep -E '^(NEXT_PUBLIC_SUPABASE_URL|NEXT_PUBLIC_SUPABASE_ANON_KEY|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_DB_URL|MAILPIT_URL)=' \
+            | sed 's/"//g' >> "$GITHUB_ENV"
+
+      - name: Generated types match the migrations
+        run: |
+          supabase gen types typescript --local > /tmp/types.ts
+          pnpm exec prettier --stdin-filepath lib/supabase/types.ts < /tmp/types.ts > /tmp/types.formatted.ts
+          diff -u lib/supabase/types.ts /tmp/types.formatted.ts
+
+      - run: pnpm test:db
+
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright against the production build
+        run: pnpm test:e2e
+        env:
+          E2E_PROD: 1
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: playwright-report/
+          retention-days: 7

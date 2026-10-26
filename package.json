@@ -7,19 +7,25 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "next typegen && tsc --noEmit",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:secrets": "node scripts/check-client-secrets.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:db": "vitest run --config vitest.db.config.mts",
+    "test:e2e": "playwright test",
+    "hts:import": "tsx --conditions=react-server --tsconfig tsconfig.json scripts/import-hts.ts",
+    "inngest:dev": "inngest-cli dev -u http://localhost:3000/api/inngest"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.117.2",
-    "next": "16.3.7",
+    "inngest": "^4.25.0",
+    "next": "16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "zod": "^4.6.5"
   },
   "devDependencies": {
@@ -30,10 +36,13 @@
     "@types/react-dom": "^19",
     "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9",
-    "eslint-config-next": "16.3.7",
+    "eslint-config-next": "16.3.8",
+    "inngest-cli": "1.46.0",
+    "postgres": "^3.4.9",
     "prettier": "^3.9.9",
     "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4",
+    "tsx": "^4.23.15",
     "typescript": "^5",
     "vitest": "^5.0.3"
   },
