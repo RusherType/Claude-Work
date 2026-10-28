@@ -38,9 +38,13 @@ export function DecisionPanel({
   const toggle = useRef<HTMLButtonElement>(null);
   const codeInput = useRef<HTMLInputElement>(null);
   const overrideError = overrideState.status === "error" ? overrideState : null;
-  // Opening the form moves focus into it; a failed save keeps the person's place.
+  // Opening the form moves focus into it; after a failed save, to the first field in error.
   useEffect(() => {
-    if (open) codeInput.current?.focus();
+    if (!open) return;
+    const invalid = document
+      .getElementById("override-form")
+      ?.querySelector<HTMLElement>('[aria-invalid="true"]');
+    (invalid ?? codeInput.current)?.focus();
   }, [open, overrideError?.attempt]);
 
   const returnFields = (

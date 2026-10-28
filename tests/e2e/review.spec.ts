@@ -197,13 +197,15 @@ test.describe("review queue", () => {
     await page.getByRole("link", { name: "← Review queue" }).click();
     await expect(page.getByText("1 of 1")).toBeVisible();
 
-    // The shortcuts can be turned off (and stay off).
+    // The shortcuts can be turned off (and stay off). Focus leaves the checkbox first, since
+    // keys typed into a form control are ignored anyway.
     await page.getByLabel("Keyboard shortcuts").uncheck();
-    await page.keyboard.press("j");
+    await page.evaluate(() => (document.activeElement as HTMLElement).blur());
     await page.keyboard.press("e");
-    // Give a navigation, if any, time to start before checking we stayed.
+    // The same key navigated above; give a navigation, if any, time to start.
     await page.waitForTimeout(500);
     await expect(page).toHaveURL(/\/app\/review/);
+    await expect(page.getByText("1 of 1")).toBeVisible();
     await page.reload();
     await expect(page.getByLabel("Keyboard shortcuts")).not.toBeChecked();
     await page.getByLabel("Keyboard shortcuts").check();

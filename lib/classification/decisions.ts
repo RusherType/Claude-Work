@@ -34,12 +34,17 @@ export const CLASS_STATUSES = [
 ] as const;
 
 const empty = z.literal("").transform(() => null);
+/**
+ * A code as stored and shown, sent back verbatim: the database only compares it with the
+ * current one (and decides validity itself), so a malformed stored code can still be replaced.
+ */
+const shownCode = z.string().min(1).max(20);
 
 export const confirmSchema = z.object({
   classificationId: z.uuid(),
   productId: z.uuid(),
   /** The code the person saw: confirming never applies to a code they were not shown. */
-  code: htsInput,
+  code: shownCode,
   contentHash,
 });
 
@@ -47,7 +52,7 @@ export const overrideSchema = z.object({
   productId: z.uuid(),
   /** The current classification the person saw, its code and status; empty when there was none. */
   expectedId: z.union([z.uuid(), empty]),
-  expectedCode: z.union([htsInput, empty]),
+  expectedCode: z.union([shownCode, empty]),
   expectedStatus: z.union([z.enum(CLASS_STATUSES), empty]),
   code: htsInput,
   reason: text(500).refine(

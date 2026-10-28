@@ -71,7 +71,7 @@ describe("overrideSchema", () => {
     [{ expectedId: "not-a-uuid" }, "expectedId"],
     [{ contentHash: "abc" }, "contentHash"],
     [{ expectedStatus: "approved" }, "expectedStatus"],
-    [{ expectedCode: "6109" }, "expectedCode"],
+    [{ expectedCode: "x".repeat(21) }, "expectedCode"],
   ] as [Record<string, string>, string][])(
     "refuses %j on %s",
     (patch, field) => {
@@ -80,6 +80,21 @@ describe("overrideSchema", () => {
       if (!r.success) expect(r.error.issues[0].path[0]).toBe(field);
     },
   );
+
+  it("sends the shown code back as stored, even when it is malformed", () => {
+    for (const shown of ["61091000", "6109.10.0012"])
+      expect(
+        overrideSchema.parse({ ...base, expectedCode: shown }).expectedCode,
+      ).toBe(shown);
+    expect(
+      confirmSchema.parse({
+        classificationId: C,
+        productId: P,
+        code: "6109.10.0012",
+        contentHash: HASH,
+      }).code,
+    ).toBe("6109.10.0012");
+  });
 
   it("counts characters like the database (3 emoji are 3 characters)", () => {
     expect(

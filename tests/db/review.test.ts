@@ -835,6 +835,23 @@ describeDb("review queue and decisions (live database)", () => {
         expect(status.rows[0].status).toBe("queued");
       }));
 
+    it("replaces a malformed stored code (the shown code is compared as stored)", () =>
+      scenario(async () => {
+        await seedTariff();
+        const { product, hash, classification } = await seedProduct(ws, {
+          status: "suggested",
+          code: "61091000",
+        });
+        await as(user.member, async () => {
+          expect((await confirm(classification, hash))?.message).toBe(
+            "unknown_code",
+          );
+          expect(
+            await override(product, classification, TEE, "Full code", hash),
+          ).toBeNull();
+        });
+      }));
+
     it("an override in one market leaves other markets alone", () =>
       scenario(async () => {
         await seedTariff();

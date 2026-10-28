@@ -464,3 +464,11 @@ findings; the reviewer asked for changes. CI was already green on 4b4bb10. Fixed
     come from the model, which read untrusted product text);
   - the CSP needs an `img-src` decision for seller images when it is tightened (CD-104);
   - rate limits on these actions come with CD-104.
+
+**CD-040 to CD-042 review, round 2.** CI was green on 3d7c59b; the reviewer confirmed all 12
+round-1 findings fixed and found two small ones, now fixed:
+- the code the person saw is sent back as stored (bounded, not normalised): a stored code with
+  dots, or a malformed one, could otherwise never be confirmed or overridden (database test
+  overrides a stored 8-digit code);
+- the "shortcuts off" e2e step now moves focus off the checkbox before pressing E, so it can
+  fail; after a failed override, focus goes to the first field in error.
