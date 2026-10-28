@@ -6,7 +6,7 @@ import {
   readAlternatives,
   readCitations,
   readGriPath,
-  safeHttpsUrl,
+  rulingUrl,
 } from "./result";
 
 describe("readAlternatives", () => {
@@ -84,13 +84,17 @@ describe("confidence", () => {
   });
 });
 
-describe("safeHttpsUrl", () => {
-  it("allows https links only", () => {
-    expect(safeHttpsUrl("https://rulings.cbp.gov/ruling/N123456")).toBe(
+describe("rulingUrl", () => {
+  it("allows https links to the CBP rulings site only", () => {
+    expect(rulingUrl("https://rulings.cbp.gov/ruling/N123456")).toBe(
       "https://rulings.cbp.gov/ruling/N123456",
     );
     for (const bad of [
       "http://rulings.cbp.gov/ruling/N1",
+      "https://rulings.cbp.gov.evil.example/ruling/N1",
+      "https://evil.example/rulings.cbp.gov",
+      "https://user:pw@rulings.cbp.gov/ruling/N1",
+      "https://rulings.cbp.gov:8443/ruling/N1",
       "javascript:alert(1)",
       "data:text/html,x",
       "not a url",
@@ -98,6 +102,6 @@ describe("safeHttpsUrl", () => {
       null,
       undefined,
     ])
-      expect(safeHttpsUrl(bad)).toBeNull();
+      expect(rulingUrl(bad)).toBeNull();
   });
 });

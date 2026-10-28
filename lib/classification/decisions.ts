@@ -22,16 +22,33 @@ export const returnSchema = z.discriminatedUnion("from", [
 ]);
 export type ReturnTo = z.infer<typeof returnSchema>;
 
+/** Statuses a classification can be in (the class_status enum). */
+export const CLASS_STATUSES = [
+  "queued",
+  "needs_answer",
+  "in_review",
+  "suggested",
+  "confirmed",
+  "broker_verified",
+  "outdated",
+] as const;
+
+const empty = z.literal("").transform(() => null);
+
 export const confirmSchema = z.object({
   classificationId: z.uuid(),
   productId: z.uuid(),
+  /** The code the person saw: confirming never applies to a code they were not shown. */
+  code: htsInput,
   contentHash,
 });
 
 export const overrideSchema = z.object({
   productId: z.uuid(),
-  /** The current classification the person saw; empty when the product had none. */
-  expectedId: z.union([z.uuid(), z.literal("").transform(() => null)]),
+  /** The current classification the person saw, its code and status; empty when there was none. */
+  expectedId: z.union([z.uuid(), empty]),
+  expectedCode: z.union([htsInput, empty]),
+  expectedStatus: z.union([z.enum(CLASS_STATUSES), empty]),
   code: htsInput,
   reason: text(500).refine(
     // Counted in characters, as the database's char_length does.
@@ -92,14 +109,21 @@ export function decisionMessage(
   kind: "confirm" | "override" | "answer",
   error: NonNullable<DbFailure>,
 ): { message: string; field?: string } {
+  if (error.message === "not_authenticated")
+    return { message: "Your session has ended. Sign in again." };
   if (error.code === "42501")
     return {
       message:
         kind === "answer"
-          ? "Viewers can't answer questions. Ask an owner or admin to change your role."
-          : "Viewers can't confirm or change codes. Ask an owner or admin to change your role.",
+          ? "You can't answer questions in this workspace. Reload, or ask an owner or admin about your role."
+          : "You can't change codes in this workspace. Reload, or ask an owner or admin about your role.",
     };
   switch (error.message) {
+    case "broker_verified":
+      return {
+        message:
+          "A licensed broker verified this code. Only an owner or admin can replace it.",
+      };
     case "stale":
       return {
         message:

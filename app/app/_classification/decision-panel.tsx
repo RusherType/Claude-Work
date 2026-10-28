@@ -1,6 +1,6 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useRef, useState, type Ref } from "react";
 import { field, primary, secondary } from "@/lib/ui/styles";
 import { confirmCode, overrideCode, type DecisionState } from "./actions";
 
@@ -18,12 +18,15 @@ export function DecisionPanel({
   contentHash,
   current,
   canConfirm,
+  canOverride,
   origin,
 }: {
   productId: string;
   contentHash: string;
-  current: { id: string; code: string | null } | null;
+  current: { id: string; code: string | null; status: string } | null;
   canConfirm: boolean;
+  /** False when only an owner or admin may replace the code (broker-verified). */
+  canOverride: boolean;
   origin: Origin;
 }) {
   const [confirmState, confirm, confirming] = useActionState(confirmCode, idle);
@@ -32,7 +35,14 @@ export function DecisionPanel({
     idle,
   );
   const [open, setOpen] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  const codeInput = useRef<HTMLInputElement>(null);
   const overrideError = overrideState.status === "error" ? overrideState : null;
+  // Opening the form moves focus into it; a failed save keeps the person's place.
+  useEffect(() => {
+    if (open) codeInput.current?.focus();
+  }, [open, overrideError?.attempt]);
+
   const returnFields = (
     <>
       <input type="hidden" name="productId" value={productId} />
@@ -46,7 +56,7 @@ export function DecisionPanel({
 
   return (
     <div className="flex flex-col gap-3">
-      {canConfirm && current && (
+      {canConfirm && current?.code && (
         <form
           id="confirm-form"
           action={confirm}
@@ -54,6 +64,7 @@ export function DecisionPanel({
         >
           {returnFields}
           <input type="hidden" name="classificationId" value={current.id} />
+          <input type="hidden" name="code" value={current.code} />
           <button type="submit" disabled={confirming} className={primary}>
             {confirming
               ? "Confirming…"
@@ -69,19 +80,26 @@ export function DecisionPanel({
         </form>
       )}
 
-      {!open ? (
+      {canOverride ? (
         <div>
           <button
+            ref={toggle}
             type="button"
             className={secondary}
-            aria-expanded={false}
+            aria-expanded={open}
             aria-controls="override-form"
-            onClick={() => setOpen(true)}
+            onClick={() => setOpen((o) => !o)}
           >
             {current?.code ? "Use a different code" : "Set a code yourself"}
           </button>
         </div>
       ) : (
+        <p className="text-muted text-xs">
+          A licensed broker verified this code. Only an owner or admin can
+          replace it.
+        </p>
+      )}
+      {canOverride && open && (
         <form
           id="override-form"
           key={overrideError?.attempt ?? 0}
@@ -91,6 +109,16 @@ export function DecisionPanel({
         >
           {returnFields}
           <input type="hidden" name="expectedId" value={current?.id ?? ""} />
+          <input
+            type="hidden"
+            name="expectedCode"
+            value={current?.code ?? ""}
+          />
+          <input
+            type="hidden"
+            name="expectedStatus"
+            value={current?.status ?? ""}
+          />
           <OverrideField
             id="override-code"
             name="code"
@@ -98,6 +126,7 @@ export function DecisionPanel({
             help="For example 6109.10.0012."
             value={overrideError?.values?.code ?? ""}
             error={overrideError?.errors?.code}
+            inputRef={codeInput}
           />
           <OverrideField
             id="override-reason"
@@ -120,7 +149,10 @@ export function DecisionPanel({
             <button
               type="button"
               className={secondary}
-              onClick={() => setOpen(false)}
+              onClick={() => {
+                setOpen(false);
+                toggle.current?.focus();
+              }}
             >
               Cancel
             </button>
@@ -139,7 +171,9 @@ function OverrideField({
   value,
   error,
   multiline,
+  inputRef,
 }: {
+  inputRef?: Ref<HTMLInputElement>;
   id: string;
   name: string;
   label: string;
@@ -165,7 +199,12 @@ function OverrideField({
       {multiline ? (
         <textarea {...props} rows={2} maxLength={500} />
       ) : (
-        <input {...props} inputMode="decimal" autoComplete="off" />
+        <input
+          {...props}
+          ref={inputRef}
+          inputMode="decimal"
+          autoComplete="off"
+        />
       )}
       <p id={`${id}-help`} className="text-muted text-xs">
         {help}

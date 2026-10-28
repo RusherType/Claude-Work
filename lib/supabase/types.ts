@@ -1484,6 +1484,7 @@ export type Database = {
         Args: { p_answer: string; p_question: string };
         Returns: undefined;
       };
+      can_decide: { Args: { p_workspace: string }; Returns: boolean };
       catalog_facets: {
         Args: { p_workspace_id: string };
         Returns: {
@@ -1493,7 +1494,11 @@ export type Database = {
         }[];
       };
       confirm_classification: {
-        Args: { p_classification: string; p_content_hash: string };
+        Args: {
+          p_classification: string;
+          p_code: string;
+          p_content_hash: string;
+        };
         Returns: string;
       };
       create_invitation: {
@@ -1579,6 +1584,8 @@ export type Database = {
           p_code: string;
           p_content_hash: string;
           p_expected: string;
+          p_expected_code: string;
+          p_expected_status: Database["public"]["Enums"]["class_status"];
           p_market?: Database["public"]["Enums"]["market_code"];
           p_product: string;
           p_reason: string;

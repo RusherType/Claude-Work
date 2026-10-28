@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Client } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { connect, describeDb, signInAs, type DbError } from "./helpers";
+import type { Client as PgClient } from "pg";
 
 // CD-040/041: the review queue and the functions people decide codes with, as real users.
 // Every test runs in a transaction that is rolled back; tariff data is seeded inside it.
@@ -9,6 +10,7 @@ import { connect, describeDb, signInAs, type DbError } from "./helpers";
 const ws = randomUUID();
 const other = randomUUID();
 const user = {
+  admin: randomUUID(),
   member: randomUUID(),
   viewer: randomUUID(),
   outsider: randomUUID(),
@@ -119,22 +121,48 @@ async function attempt(
   }
 }
 
-const confirm = (id: string | null, hash: string) =>
-  attempt("select confirm_classification($1, $2)", [id, hash]);
-const override = (
+type Seen = { code: string | null; status: string | null };
+
+/** What the page showed for a classification: read as the table owner (state before acting). */
+async function seen(id: string | null): Promise<Seen> {
+  if (!id) return { code: null, status: null };
+  await db.query("savepoint look");
+  await db.query("set local role postgres");
+  const row = (
+    await db.query("select code, status from classifications where id = $1", [
+      id,
+    ])
+  ).rows[0];
+  await db.query("rollback to savepoint look");
+  return row ?? { code: null, status: null };
+}
+
+/** Confirm as the page does: with the code it showed (by default, the stored one). */
+const confirm = async (id: string | null, hash: string, code?: string | null) =>
+  attempt("select confirm_classification($1, $2, $3)", [
+    id,
+    code === undefined ? (await seen(id)).code : code,
+    hash,
+  ]);
+const override = async (
   product: string,
   expected: string | null,
   code: string,
   reason: string,
   hash: string,
-) =>
-  attempt("select override_classification($1, $2, $3, $4, $5)", [
+  shown?: Seen,
+) => {
+  const s = shown ?? (await seen(expected));
+  return attempt("select override_classification($1, $2, $3, $4, $5, $6, $7)", [
     product,
     expected,
+    s.code,
+    s.status,
     code,
     reason,
     hash,
   ]);
+};
 
 describeDb("review queue and decisions (live database)", () => {
   beforeAll(async () => {
@@ -151,8 +179,8 @@ describeDb("review queue and decisions (live database)", () => {
     );
     await db.query(
       `insert into memberships (workspace_id, user_id, role)
-       values ($1, $3, 'member'), ($1, $4, 'viewer'), ($2, $5, 'owner')`,
-      [ws, other, user.member, user.viewer, user.outsider],
+       values ($1, $3, 'member'), ($1, $4, 'viewer'), ($2, $5, 'owner'), ($1, $6, 'admin')`,
+      [ws, other, user.member, user.viewer, user.outsider, user.admin],
     );
     await db.query("commit");
   });
@@ -209,6 +237,9 @@ describeDb("review queue and decisions (live database)", () => {
                 market: "US",
                 code: TEE,
                 previous_status: "suggested",
+                confidence: 0.9,
+                agent_run_id: null,
+                tariff_revision_id: rev,
                 content_hash: hash,
               },
             },
@@ -623,5 +654,286 @@ describeDb("review queue and decisions (live database)", () => {
           expect(none.rows).toEqual([]);
         });
       }));
+  });
+
+  describe("hardening (review round 1)", () => {
+    const answer = (id: string, text: string) =>
+      attempt("select answer_agent_question($1, $2)", [id, text]);
+
+    it("refuses to confirm a code that changed in place after the page loaded", () =>
+      scenario(async () => {
+        await seedTariff();
+        const { hash, classification } = await seedProduct(ws, {
+          status: "suggested",
+        });
+        await db.query("update classifications set code = $2 where id = $1", [
+          classification,
+          TEE_OTHER,
+        ]);
+        await as(user.member, async () => {
+          expect((await confirm(classification, hash, TEE))?.message).toBe(
+            "stale",
+          );
+        });
+      }));
+
+    it("refuses an override when a colleague confirmed the code meanwhile", () =>
+      scenario(async () => {
+        await seedTariff();
+        const { product, hash, classification } = await seedProduct(ws, {
+          status: "suggested",
+        });
+        const shown = await seen(classification);
+        await db.query(
+          "update classifications set status = 'confirmed', confirmed_at = now() where id = $1",
+          [classification],
+        );
+        await as(user.member, async () => {
+          expect(
+            (
+              await override(
+                product,
+                classification,
+                TEE_OTHER,
+                "Printed logo",
+                hash,
+                shown,
+              )
+            )?.message,
+          ).toBe("stale");
+        });
+      }));
+
+    it("lets only owners and admins replace a broker-verified code", () =>
+      scenario(async () => {
+        await seedTariff();
+        const { product, hash, classification } = await seedProduct(ws, {
+          status: "broker_verified",
+        });
+        await as(user.member, async () => {
+          expect(
+            (
+              await override(
+                product,
+                classification,
+                TEE_OTHER,
+                "Our own view",
+                hash,
+              )
+            )?.message,
+          ).toBe("broker_verified");
+        });
+        await as(user.admin, async () => {
+          expect(
+            await override(
+              product,
+              classification,
+              TEE_OTHER,
+              "Broker made a mistake",
+              hash,
+            ),
+          ).toBeNull();
+        });
+      }));
+
+    it("refuses every decision in a deleted workspace", () =>
+      scenario(async () => {
+        await seedTariff();
+        const { product, hash, classification } = await seedProduct(ws, {
+          status: "suggested",
+        });
+        const q = randomUUID();
+        await db.query(
+          `insert into agent_questions (id, workspace_id, product_id, question)
+           values ($1, $2, $3, 'Knitted?')`,
+          [q, ws, product],
+        );
+        await db.query(
+          "update workspaces set deleted_at = now() where id = $1",
+          [ws],
+        );
+        await as(user.member, async () => {
+          expect((await confirm(classification, hash))?.code).toBe("42501");
+          expect(
+            (
+              await override(
+                product,
+                classification,
+                TEE_OTHER,
+                "Reason here",
+                hash,
+              )
+            )?.code,
+          ).toBe("42501");
+          expect((await answer(q, "Yes"))?.code).toBe("42501");
+        });
+      }));
+
+    it("refuses unknown ids like other workspaces' ids", () =>
+      scenario(async () => {
+        await as(user.member, async () => {
+          const id = randomUUID();
+          expect((await confirm(id, "x", TEE))?.code).toBe("42501");
+          expect(
+            (await override(id, null, TEE, "Reason here", "x"))?.code,
+          ).toBe("42501");
+          expect((await answer(id, "Yes"))?.code).toBe("42501");
+        });
+      }));
+
+    it("grants none of the review functions to anonymous callers", async () => {
+      const fns = [
+        "revision_in_force(public.market_code)",
+        "is_filing_code(uuid, text)",
+        "hts_breadcrumb(uuid, text)",
+        "review_position(uuid, uuid, public.market_code)",
+        "can_decide(uuid)",
+        "confirm_classification(uuid, text, text)",
+        "override_classification(uuid, uuid, text, public.class_status, text, text, text, public.market_code)",
+        "answer_agent_question(uuid, text)",
+      ];
+      for (const fn of fns) {
+        const { rows } = await db.query(
+          `select has_function_privilege('anon', $1, 'execute') as anon,
+                  has_function_privilege('authenticated', $1, 'execute') as signed_in`,
+          [`public.${fn}`],
+        );
+        expect(rows[0], fn).toEqual({ anon: false, signed_in: true });
+      }
+    });
+
+    it("answers only the current run's questions; older open ones never block the re-run", () =>
+      scenario(async () => {
+        const { product } = await seedProduct(ws);
+        const [oldRun, newRun] = [randomUUID(), randomUUID()];
+        for (const run of [oldRun, newRun])
+          await db.query(
+            `insert into agent_runs (id, workspace_id, product_id, model, prompt_version)
+             values ($1, $2, $3, 'test', 'v1')`,
+            [run, ws, product],
+          );
+        const cls = randomUUID();
+        await db.query(
+          `insert into classifications (id, workspace_id, product_id, status, agent_run_id)
+           values ($1, $2, $3, 'needs_answer', $4)`,
+          [cls, ws, product, newRun],
+        );
+        const [oldQ, newQ] = [randomUUID(), randomUUID()];
+        await db.query(
+          `insert into agent_questions (id, workspace_id, product_id, agent_run_id, question)
+           values ($1, $3, $4, $5, 'Old question?'), ($2, $3, $4, $6, 'New question?')`,
+          [oldQ, newQ, ws, product, oldRun, newRun],
+        );
+        await as(user.member, async () => {
+          expect((await answer(oldQ, "Yes"))?.message).toBe("stale");
+          expect(await answer(newQ, "Knitted")).toBeNull();
+        });
+        const status = await db.query(
+          "select status from classifications where id = $1",
+          [cls],
+        );
+        expect(status.rows[0].status).toBe("queued");
+      }));
+
+    it("an override in one market leaves other markets alone", () =>
+      scenario(async () => {
+        await seedTariff();
+        const { product, hash } = await seedProduct(ws);
+        const uk = randomUUID();
+        await db.query(
+          `insert into classifications (id, workspace_id, product_id, market, code, status)
+           values ($1, $2, $3, 'UK', '6109100010', 'suggested')`,
+          [uk, ws, product],
+        );
+        await as(user.member, async () => {
+          expect(
+            await override(product, null, TEE, "Checked by hand", hash),
+          ).toBeNull();
+        });
+        const rows = await db.query(
+          "select market, is_current from classifications where product_id = $1 order by market",
+          [product],
+        );
+        expect(rows.rows).toEqual([
+          { market: "US", is_current: true },
+          { market: "UK", is_current: true },
+        ]);
+      }));
+
+    it("follows parents across skipped indent levels", () =>
+      scenario(async () => {
+        const rev = randomUUID();
+        await db.query(
+          `insert into tariff_revisions (id, market, label, effective_from)
+           values ($1, 'US', $2, current_date - 1)`,
+          [rev, `gap-${rev}`],
+        );
+        const lines: [string, number, string, boolean][] = [
+          ["0101", 0, "Live horses", false],
+          ["", 1, "Horses:", false],
+          ["0101210010", 2, "Purebred breeding horses", true],
+          ["0102", 0, "Live bovine animals", false],
+          ["0102290010", 2, "Cattle for slaughter", true],
+        ];
+        for (const [code, indent, description, leaf] of lines)
+          await db.query(
+            `insert into tariff_lines (revision_id, code, indent, description, is_leaf)
+             values ($1, $2, $3, $4, $5)`,
+            [rev, code, indent, description, leaf],
+          );
+        const rows = (
+          await db.query(
+            "select code, indent from hts_breadcrumb($1, '0102290010')",
+            [rev],
+          )
+        ).rows;
+        expect(rows).toEqual([
+          { code: "0102", indent: 0 },
+          { code: "0102290010", indent: 2 },
+        ]);
+      }));
+
+    it("two people answering the last two questions at once still re-queue the code", async () => {
+      // Real concurrency needs committed rows and two connections.
+      const product = randomUUID();
+      const cls = randomUUID();
+      const [q1, q2] = [randomUUID(), randomUUID()];
+      await db.query(
+        "insert into products (id, workspace_id, sku, title) values ($1, $2, $3, 'Race')",
+        [product, ws, `RACE-${product.slice(0, 8)}`],
+      );
+      await db.query(
+        `insert into classifications (id, workspace_id, product_id, status)
+         values ($1, $2, $3, 'needs_answer')`,
+        [cls, ws, product],
+      );
+      await db.query(
+        `insert into agent_questions (id, workspace_id, product_id, question)
+         values ($1, $3, $4, 'One?'), ($2, $3, $4, 'Two?')`,
+        [q1, q2, ws, product],
+      );
+      const [a, b]: PgClient[] = [await connect(), await connect()];
+      try {
+        for (const c of [a, b]) {
+          await c.query("begin");
+          await signInAs(c, user.member);
+        }
+        await a.query("select answer_agent_question($1, 'Yes')", [q1]);
+        // b waits for a's product lock, then sees a's answer.
+        const second = b.query("select answer_agent_question($1, 'No')", [q2]);
+        await new Promise((r) => setTimeout(r, 200));
+        await a.query("commit");
+        await second;
+        await b.query("commit");
+      } finally {
+        await a.end();
+        await b.end();
+      }
+      const status = await db.query(
+        "select status from classifications where id = $1",
+        [cls],
+      );
+      expect(status.rows[0].status).toBe("queued");
+    });
   });
 });

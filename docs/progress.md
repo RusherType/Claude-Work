@@ -424,3 +424,43 @@ never looks like a change) and names vendor in the store-sync banner.
   - re-run products whose code went back to `queued` after an answer;
   - a product edit leaves a `suggested` code as it is (only confirmed codes go Outdated), so the
     agent should re-check suggestions when the content hash changes.
+
+**CD-040 to CD-042 review, round 1.** The security audit passed with no critical or high
+findings; the reviewer asked for changes. CI was already green on 4b4bb10. Fixed:
+- **Confirm and override check what the person saw:** confirm now takes the code shown, and
+  override the code and status shown, so a code changed in place (by an agent re-run) or just
+  confirmed by a colleague is never confirmed or replaced unseen.
+- **Answer race:** two people answering a product's last two questions at once left it stuck
+  in `needs_answer`. Answers now lock the product first; a two-connection test proves it (and
+  fails with the locks removed).
+- **Breadcrumb:** wrong parents when indent levels skip (a line at indent 2 straight under a
+  heading). It now walks up to the closest line above with a smaller indent.
+- **Broker-verified codes:** only owners and admins can replace them; members see why.
+- **Stale questions:** only the current run's questions are shown and answerable, and only
+  while the code waits for answers; older open ones never block the re-run.
+- **Authorise before locking:** the functions check the role on an unlocked read, so no one
+  can lock (or time) another tenant's rows.
+- **UI:**
+  - "Suggested, not confirmed" shows on any unconfirmed code, whatever the status;
+  - the keyboard shortcuts can be turned off (WCAG 2.1.4) and A can't submit twice;
+  - opening "Use a different code" moves focus into the form and Cancel returns it;
+  - E opens the product with a link back to the queue;
+  - neutral wording when an action is refused;
+  - ruling links only to `rulings.cbp.gov`;
+  - query flags read with `Object.hasOwn` (`?done=__proto__` crashed the page);
+  - the queue page restarts if the code was decided meanwhile.
+- **Audit rows:** confirm records the confidence, run and revision; answers record the
+  question and answer.
+- **Tests:** 10 more database tests:
+  - a code changed in place, a status changed before an override, the broker rule;
+  - deleted workspaces, unknown ids;
+  - no anonymous `EXECUTE` on any review function;
+  - stale questions, another market;
+  - the indent gap and the answer race.
+
+  Playwright now covers J, K, E and turning the shortcuts off.
+- **Notes for later:**
+  - CD-034 must wrap the seller's answers in the re-run prompt as untrusted data (answer chips
+    come from the model, which read untrusted product text);
+  - the CSP needs an `img-src` decision for seller images when it is tightened (CD-104);
+  - rate limits on these actions come with CD-104.

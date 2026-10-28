@@ -30,17 +30,22 @@ export function ClassificationCard({
   productId,
   contentHash,
   canDecide,
+  canReplaceVerified,
   origin,
 }: {
   data: CardData;
   productId: string;
   contentHash: string;
   canDecide: boolean;
+  /** Owners and admins may replace a broker-verified code. */
+  canReplaceVerified: boolean;
   origin: Origin;
 }) {
   const c = data.current;
   const status = c?.status ?? "unclassified";
-  const suggested = status === "suggested" || status === "in_review";
+  // Any code a person has not confirmed is a suggestion (CLAUDE.md: never imply a guarantee).
+  const unconfirmed =
+    !!c?.code && !["confirmed", "broker_verified", "outdated"].includes(status);
 
   return (
     <aside
@@ -63,7 +68,7 @@ export function ClassificationCard({
               : "Not classified yet. Suggested codes arrive with the AI agent."}
           </p>
         )}
-        {suggested && c?.code && (
+        {unconfirmed && (
           <p className="text-muted text-sm">
             Suggested, not confirmed. Check it before you rely on it.
           </p>
@@ -217,7 +222,8 @@ export function ClassificationCard({
         <DecisionPanel
           productId={productId}
           contentHash={contentHash}
-          current={c && { id: c.id, code: c.code }}
+          current={c && { id: c.id, code: c.code, status: c.status }}
+          canOverride={status !== "broker_verified" || canReplaceVerified}
           canConfirm={!!c?.code && CONFIRMABLE.has(status)}
           origin={origin}
         />

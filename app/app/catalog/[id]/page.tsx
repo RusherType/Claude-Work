@@ -25,7 +25,11 @@ export default async function ProductPage(
   if (!ctx) redirect("/sign-in?next=/app/catalog");
   if (!ctx.workspace) redirect("/app");
   const { id } = await props.params;
-  const { saved, decided } = await props.searchParams;
+  const { saved, decided, from } = await props.searchParams;
+  const decidedText =
+    typeof decided === "string" && Object.hasOwn(DECIDED, decided)
+      ? DECIDED[decided]
+      : null;
   if (!/^[0-9a-f-]{36}$/i.test(id)) notFound();
 
   const supabase = await createClient();
@@ -70,9 +74,15 @@ export default async function ProductPage(
 
   return (
     <div className="flex flex-col gap-4">
-      <Link href="/app/catalog" className="text-brand text-sm underline">
-        ← Catalog
-      </Link>
+      {from === "review" ? (
+        <Link href="/app/review" className="text-brand text-sm underline">
+          ← Review queue
+        </Link>
+      ) : (
+        <Link href="/app/catalog" className="text-brand text-sm underline">
+          ← Catalog
+        </Link>
+      )}
       <div>
         <h1 className="text-xl font-semibold">{p.title}</h1>
         <p className="text-muted mt-1 font-mono text-xs">{p.sku ?? "No SKU"}</p>
@@ -93,9 +103,9 @@ export default async function ProductPage(
         </p>
       )}
 
-      {decided && DECIDED[String(decided)] && (
+      {decidedText && (
         <p role="status" className="text-confirmed text-sm">
-          {DECIDED[String(decided)]}
+          {decidedText}
         </p>
       )}
 
@@ -125,6 +135,9 @@ export default async function ProductPage(
           productId={p.id}
           contentHash={p.content_hash ?? ""}
           canDecide={canEdit}
+          canReplaceVerified={
+            ctx.workspace.role === "owner" || ctx.workspace.role === "admin"
+          }
           origin={{ from: "product" }}
         />
       </div>

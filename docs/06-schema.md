@@ -151,29 +151,39 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   - **Tariff in force:** `revision_in_force(market)` is the latest revision whose
     `effective_from` is today or earlier (`current_revision` also returns future ones).
     `is_filing_code(revision, code)` is true for a 10-digit leaf line of that revision.
-    `hts_breadcrumb(revision, code)` returns the heading, each parent line and the line itself;
-    lines are in schedule order (`tariff_lines.id`), so a line's parent at each indent is the
-    closest line above it with that indent.
+    `hts_breadcrumb(revision, code)` returns the heading, each parent line and the line itself:
+    a line's parent is the closest line above it with a smaller indent (indents can skip
+    levels). This relies on `tariff_lines.id` being schedule order, so **the CD-010 importer
+    must insert each revision as one ordered stream** (no parallel or reordered batches).
   - **Queue:** `review_queue` is a security-invoker view of current codes that need a person
     (`needs_answer`, `in_review`, `outdated`, `suggested`, in that priority, oldest first).
     `review_position(workspace, at, market)` returns the item at `at` (or the first one), the
     previous and next ids, its position and the total.
-  - **Confirm:** `confirm_classification(classification, content_hash)` is for owners, admins and
-    members of a live workspace. It accepts the current code only, and only when the product's
-    content hash is the one the person saw. The code must be `suggested`, `in_review` or
-    `outdated` and be a filing line of the tariff in force. It sets `confirmed`, `confirmed_by`,
-    `confirmed_at` and the revision, and writes `classification.confirm` to `audit_log`.
-  - **Override:** `override_classification(product, expected, code, reason, content_hash,
-    market)` has the same checks; `expected` is the current classification the person saw (null
-    when the product had none). It needs a 3–500 character reason. The old row stays as history
-    (`is_current = false`); the new row is `confirmed` with source `override`. It writes
-    `classification.override` with the previous code and the reason.
-  - **Answers:** `answer_agent_question(question, answer)` takes a 1–300 character answer, once.
-    When the product has no open questions left, its `needs_answer` code goes back to `queued`
-    for the agent (CD-034 starts the re-run). It writes `question.answer`.
-  - **Errors:** 42501 not allowed, 22023 invalid input, P0001 `stale`, `not_confirmable`,
-    `unknown_code`, `already_answered`. Confirm and override lock the product row first, then
-    the classification (the same order as the product triggers).
+  - **Who:** `can_decide(workspace)` is owners, admins and members of a workspace that is not
+    deleted. Each decision function checks it on an unlocked read first, then locks the product
+    and then the classification or question (the same order as the product triggers), so
+    decisions on one product run one at a time, never deadlock, and nobody can lock another
+    tenant's rows.
+  - **Confirm:** `confirm_classification(classification, code, content_hash)` accepts the
+    current code only, and only when its code and the product's content hash are the ones the
+    person saw. The status must be `suggested`, `in_review` or `outdated` and the code a filing
+    line of the tariff in force. It sets `confirmed`, `confirmed_by`, `confirmed_at` and the
+    revision, and writes `classification.confirm` (code, previous status, confidence, run,
+    revision, content hash) to `audit_log`.
+  - **Override:** `override_classification(product, expected_id, expected_code,
+    expected_status, code, reason, content_hash, market)`: the expected values are the current
+    classification the person saw (all null when there was none), so a code a colleague just
+    confirmed or changed is never replaced unseen. It needs a 3–500 character reason. A
+    `broker_verified` code can be replaced only by an owner or admin. The old row stays as
+    history (`is_current = false`); the new row is `confirmed` with source `override`. It
+    writes `classification.override` with the previous code, the reason and the revision.
+  - **Answers:** `answer_agent_question(question, answer)` takes a 1–300 character answer, once,
+    and only for a question of the run behind the product's current `needs_answer` code
+    (`agent_run_id` matches; older questions are stale). When that run has no open questions
+    left, the code goes back to `queued` for the agent (CD-034 starts the re-run). It writes
+    `question.answer` with the question and answer.
+  - **Errors:** 42501 not allowed (also no session: `not_authenticated`), 22023 invalid input,
+    P0001 `stale`, `not_confirmable`, `unknown_code`, `broker_verified`, `already_answered`.
   - **Agent output (CD-032 writes, CD-042 shows):** `alternatives` is
     `[{ code (10 digits), why }]` (at most 5 shown), `citations` is
     `[{ kind: 'ruling', number, note? } | { kind: 'note', ref, note? }]`, `gri_path` is

@@ -6,7 +6,7 @@ import {
   readAlternatives,
   readCitations,
   readGriPath,
-  safeHttpsUrl,
+  rulingUrl,
   type Alternative,
   type Citation,
 } from "./result";
@@ -78,11 +78,11 @@ export async function loadCard(
   workspaceId: string,
   productId: string,
 ): Promise<CardData> {
-  const [rows, questions, members] = await Promise.all([
+  const [rows, members] = await Promise.all([
     supabase
       .from("classifications")
       .select(
-        "id, code, status, source, confidence, reasoning, gri_path, alternatives, citations, override_reason, confirmed_by, confirmed_at, created_at, is_current, tariff_revision_id",
+        "id, code, status, source, confidence, reasoning, gri_path, alternatives, citations, override_reason, confirmed_by, confirmed_at, created_at, is_current, tariff_revision_id, agent_run_id",
       )
       .eq("workspace_id", workspaceId)
       .eq("product_id", productId)
@@ -90,17 +90,9 @@ export async function loadCard(
       .order("is_current", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(HISTORY_LIMIT),
-    supabase
-      .from("agent_questions")
-      .select("id, question, options")
-      .eq("workspace_id", workspaceId)
-      .eq("product_id", productId)
-      .is("answered_at", null)
-      .order("id")
-      .limit(10),
     supabase.rpc("workspace_members", { p_workspace: workspaceId }),
   ]);
-  if (rows.error || questions.error || members.error)
+  if (rows.error || members.error)
     throw new Error("Could not load the classification");
 
   const names = new Map(
@@ -127,9 +119,14 @@ export async function loadCard(
     createdAt: currentRow.created_at ?? "",
   };
 
-  const [breadcrumb, rulings] = await Promise.all([
+  const [breadcrumb, rulings, questions] = await Promise.all([
     loadBreadcrumb(supabase, currentRow?.tariff_revision_id ?? null, current),
     loadRulings(supabase, current ? citedRulings(current.citations) : []),
+    // Only the open questions of the run behind a code that waits for them (older ones are
+    // stale, and answer_agent_question refuses them).
+    currentRow?.status === "needs_answer"
+      ? loadQuestions(supabase, workspaceId, productId, currentRow.agent_run_id)
+      : [],
   ]);
 
   return {
@@ -147,12 +144,33 @@ export async function loadCard(
       createdAt: r.created_at ?? "",
       current: r.is_current === true,
     })),
-    questions: questions.data.map((q) => ({
-      id: q.id,
-      question: q.question,
-      options: readOptions(q.options),
-    })),
+    questions,
   };
+}
+
+async function loadQuestions(
+  supabase: Client,
+  workspaceId: string,
+  productId: string,
+  runId: string | null,
+): Promise<Question[]> {
+  const query = supabase
+    .from("agent_questions")
+    .select("id, question, options")
+    .eq("workspace_id", workspaceId)
+    .eq("product_id", productId)
+    .is("answered_at", null);
+  const { data, error } = await (
+    runId ? query.eq("agent_run_id", runId) : query.is("agent_run_id", null)
+  )
+    .order("id")
+    .limit(10);
+  if (error) throw new Error("Could not load the agent's questions");
+  return data.map((q) => ({
+    id: q.id,
+    question: q.question,
+    options: readOptions(q.options),
+  }));
 }
 
 /** Heading to line, from the revision the code was decided in (or the one in force). */
@@ -198,7 +216,7 @@ async function loadRulings(
       date: r?.ruling_date ?? null,
       subject: r?.subject ?? null,
       status: r?.status ?? "unknown",
-      url: safeHttpsUrl(r?.url),
+      url: rulingUrl(r?.url),
     };
   });
 }

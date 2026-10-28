@@ -13,7 +13,8 @@ async function seedTariff() {
   await withLocalDb(async (db) => {
     await db.query(
       `insert into public.tariff_revisions (id, market, label, effective_from)
-       values ($1, 'US', 'e2e-review', '2026-01-01') on conflict do nothing`,
+       values ($1, 'US', 'e2e-review', current_date)
+       on conflict (id) do update set effective_from = current_date`,
       [REVISION],
     );
     const lines: [string, number, string, boolean][] = [
@@ -37,7 +38,11 @@ async function seedTariff() {
   });
 }
 
-async function seedAgentOutput(skuSuggested: string, skuQuestion: string) {
+async function seedAgentOutput(
+  skuSuggested: string,
+  skuQuestion: string,
+  skuReview: string,
+) {
   await withLocalDb(async (db) => {
     await db.query(
       `insert into public.classifications
@@ -56,6 +61,13 @@ async function seedAgentOutput(skuSuggested: string, skuQuestion: string) {
       `insert into public.classifications (workspace_id, product_id, status)
        select workspace_id, id, 'needs_answer' from public.products where sku = $1`,
       [skuQuestion],
+    );
+    await db.query(
+      `insert into public.classifications
+         (workspace_id, product_id, code, status, confidence, tariff_revision_id)
+       select workspace_id, id, '6109100040', 'in_review', 0.45, $2
+       from public.products where sku = $1`,
+      [skuReview, REVISION],
     );
     await db.query(
       `insert into public.agent_questions (workspace_id, product_id, question, options)
@@ -82,6 +94,7 @@ test.describe("review queue", () => {
     const run = `${testInfo.project.name}-${Date.now()}`;
     const teeSku = `TEE-${run}`;
     const mugSku = `MUG-${run}`;
+    const sockSku = `SOCK-${run}`;
     await page.goto("/app");
     await signInFromSignInPage(
       page,
@@ -102,26 +115,26 @@ test.describe("review queue", () => {
 
     await page.goto("/app/catalog/import");
     await page.getByLabel("CSV file").setInputFiles({
-      name: "two.csv",
+      name: "three.csv",
       mimeType: "text/csv",
       buffer: Buffer.from(
-        `sku,title,origin_country\n${teeSku},Crew T-shirt,CN\n${mugSku},Knit cup cosy,IN\n`,
+        `sku,title,origin_country\n${teeSku},Crew T-shirt,CN\n${mugSku},Knit cup cosy,IN\n${sockSku},Printed tee,VN\n`,
       ),
     });
     await page.getByRole("button", { name: "Continue" }).click();
     await page.getByRole("button", { name: "Check rows" }).click();
-    await page.getByRole("button", { name: "Import 2 products" }).click();
+    await page.getByRole("button", { name: "Import 3 products" }).click();
     await expect(page.getByText("Import finished.")).toBeVisible();
 
     await seedTariff();
-    await seedAgentOutput(teeSku, mugSku);
+    await seedAgentOutput(teeSku, mugSku, sockSku);
 
     // Questions come first. Q focuses the first answer; choosing it moves on.
     await page.goto("/app/review");
     await expect(
       page.getByRole("link", { name: /Review queue/ }),
-    ).toContainText("2");
-    await expect(page.getByText("1 of 2")).toBeVisible();
+    ).toContainText("3");
+    await expect(page.getByText("1 of 3")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Knit cup cosy" }),
     ).toBeVisible();
@@ -133,8 +146,22 @@ test.describe("review queue", () => {
     await page.keyboard.press("Enter");
     await expect(page.getByRole("status")).toHaveText("Answer saved.");
 
+    // Low confidence next; J and K move through the queue.
+    await expect(page.getByText("1 of 2")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Printed tee" }),
+    ).toBeVisible();
+    await expect(card(page)).toContainText(
+      "Low confidence, needs a closer look",
+    );
+    await page.keyboard.press("j");
+    await expect(page.getByText("2 of 2")).toBeVisible();
+    await page.keyboard.press("k");
+    await expect(page.getByText("1 of 2")).toBeVisible();
+    await page.keyboard.press("j");
+
     // The suggestion, with its evidence.
-    await expect(page.getByText("1 of 1")).toBeVisible();
+    await expect(page.getByText("2 of 2")).toBeVisible();
     await expect(
       page.getByRole("heading", { name: "Crew T-shirt" }),
     ).toBeVisible();
@@ -158,10 +185,30 @@ test.describe("review queue", () => {
     await page.keyboard.press("Escape");
     await expect(drawer).toBeHidden();
 
-    // A confirms; the queue is then empty and the chips everywhere say Confirmed.
+    // A confirms and moves on; E opens the product, with a way back to the queue.
     await page.keyboard.press("a");
     await expect(page.getByRole("status")).toHaveText("Confirmed.");
-    await expect(page.getByText("Nothing to review.")).toBeVisible();
+    await expect(page.getByText("1 of 1")).toBeVisible();
+    await page.keyboard.press("e");
+    await expect(page).toHaveURL(/\/app\/catalog\/[0-9a-f-]{36}\?from=review$/);
+    await expect(
+      page.getByRole("heading", { name: "Printed tee" }),
+    ).toBeVisible();
+    await page.getByRole("link", { name: "← Review queue" }).click();
+    await expect(page.getByText("1 of 1")).toBeVisible();
+
+    // The shortcuts can be turned off (and stay off).
+    await page.getByLabel("Keyboard shortcuts").uncheck();
+    await page.keyboard.press("j");
+    await page.keyboard.press("e");
+    // Give a navigation, if any, time to start before checking we stayed.
+    await page.waitForTimeout(500);
+    await expect(page).toHaveURL(/\/app\/review/);
+    await page.reload();
+    await expect(page.getByLabel("Keyboard shortcuts")).not.toBeChecked();
+    await page.getByLabel("Keyboard shortcuts").check();
+
+    // The chips everywhere say Confirmed.
     await page.goto(`/app/catalog?q=${teeSku}`);
     // A table on desktop, stacked cards on a phone.
     await expect(

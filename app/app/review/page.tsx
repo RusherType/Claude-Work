@@ -30,7 +30,10 @@ export default async function ReviewPage(props: PageProps<"/app/review">) {
   const params = await props.searchParams;
   const requested =
     typeof params.at === "string" && UUID.test(params.at) ? params.at : null;
-  const done = typeof params.done === "string" ? DONE[params.done] : undefined;
+  const done =
+    typeof params.done === "string" && Object.hasOwn(DONE, params.done)
+      ? DONE[params.done]
+      : undefined;
 
   const supabase = await createClient();
   if (!supabase) throw new Error("Supabase is not configured");
@@ -71,9 +74,9 @@ export default async function ReviewPage(props: PageProps<"/app/review">) {
     .from("classifications")
     .select("product_id")
     .eq("id", pos.id)
+    .eq("workspace_id", ctx.workspace.id)
     .maybeSingle();
   if (item.error) throw new Error("Could not load the review queue");
-  // Decided by someone else a moment ago: start again from the top.
   if (!item.data) redirect("/app/review");
   const productId = item.data.product_id;
 
@@ -90,19 +93,17 @@ export default async function ReviewPage(props: PageProps<"/app/review">) {
   ]);
   if (product.error) throw new Error("Could not load the product");
   if (!product.data) redirect("/app/review");
+  // Someone else decided it a moment ago (the current code is now another row): start again
+  // from the top rather than show a different code than the queue position says.
+  if (card.current?.id !== pos.id) redirect("/app/review");
   const p = product.data;
   const canDecide = ctx.workspace.role !== "viewer";
   const prevHref = at(pos.prev_id);
   const nextHref = at(pos.next_id);
-  const editHref = `/app/catalog/${p.id}`;
+  const editHref = `/app/catalog/${p.id}?from=review`;
 
   return (
     <div className="flex flex-col gap-4">
-      <ReviewShortcuts
-        prevHref={prevHref}
-        nextHref={nextHref}
-        editHref={editHref}
-      />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-semibold">Review queue</h1>
@@ -143,14 +144,18 @@ export default async function ReviewPage(props: PageProps<"/app/review">) {
           productId={p.id}
           contentHash={p.content_hash ?? ""}
           canDecide={canDecide}
+          canReplaceVerified={
+            ctx.workspace.role === "owner" || ctx.workspace.role === "admin"
+          }
           origin={{ from: "review", nextId: pos.next_id ?? undefined }}
         />
       </div>
 
-      <p className="text-muted hidden text-xs sm:block">
-        Keys: <kbd>A</kbd> confirm · <kbd>E</kbd> edit product · <kbd>Q</kbd>{" "}
-        answer a question · <kbd>J</kbd> next · <kbd>K</kbd> previous
-      </p>
+      <ReviewShortcuts
+        prevHref={prevHref}
+        nextHref={nextHref}
+        editHref={editHref}
+      />
     </div>
   );
 }

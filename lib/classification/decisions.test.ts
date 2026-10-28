@@ -32,6 +32,8 @@ describe("overrideSchema", () => {
   const base = {
     productId: P,
     expectedId: C,
+    expectedCode: "6109100012",
+    expectedStatus: "suggested",
     code: "6109.10.0040",
     reason: " Printed, not all white ",
     contentHash: HASH,
@@ -45,10 +47,19 @@ describe("overrideSchema", () => {
     });
   });
 
-  it("treats an empty expected id as no current code", () => {
-    expect(overrideSchema.parse({ ...base, expectedId: "" }).expectedId).toBe(
-      null,
-    );
+  it("treats an empty expected id, code and status as no current code", () => {
+    expect(
+      overrideSchema.parse({
+        ...base,
+        expectedId: "",
+        expectedCode: "",
+        expectedStatus: "",
+      }),
+    ).toMatchObject({
+      expectedId: null,
+      expectedCode: null,
+      expectedStatus: null,
+    });
   });
 
   it.each([
@@ -59,6 +70,8 @@ describe("overrideSchema", () => {
     [{ code: "6109.10" }, "code"],
     [{ expectedId: "not-a-uuid" }, "expectedId"],
     [{ contentHash: "abc" }, "contentHash"],
+    [{ expectedStatus: "approved" }, "expectedStatus"],
+    [{ expectedCode: "6109" }, "expectedCode"],
   ] as [Record<string, string>, string][])(
     "refuses %j on %s",
     (patch, field) => {
@@ -84,16 +97,20 @@ describe("confirmSchema and answerSchema", () => {
       confirmSchema.safeParse({
         classificationId: C,
         productId: P,
+        code: "6109100012",
         contentHash: HASH,
       }).success,
     ).toBe(true);
-    expect(
-      confirmSchema.safeParse({
-        classificationId: "x",
-        productId: P,
-        contentHash: HASH,
-      }).success,
-    ).toBe(false);
+    for (const patch of [{ classificationId: "x" }, { code: "" }])
+      expect(
+        confirmSchema.safeParse({
+          classificationId: C,
+          productId: P,
+          code: "6109100012",
+          contentHash: HASH,
+          ...patch,
+        }).success,
+      ).toBe(false);
     expect(
       answerSchema.parse({ questionId: C, productId: P, answer: " Knitted " })
         .answer,
@@ -154,8 +171,18 @@ describe("returning after a decision", () => {
 describe("decisionMessage", () => {
   it("explains each refusal in plain words", () => {
     expect(decisionMessage("confirm", { code: "42501" }).message).toMatch(
-      /Viewers can't/,
+      /can't change codes in this workspace/,
     );
+    expect(
+      decisionMessage("answer", {
+        code: "42501",
+        message: "not_authenticated",
+      }).message,
+    ).toMatch(/session has ended/);
+    expect(
+      decisionMessage("override", { code: "P0001", message: "broker_verified" })
+        .message,
+    ).toMatch(/Only an owner or admin/);
     expect(
       decisionMessage("confirm", { code: "P0001", message: "stale" }).message,
     ).toMatch(/changed since you opened it/);

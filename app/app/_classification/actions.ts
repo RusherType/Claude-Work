@@ -13,6 +13,9 @@ import {
   returnPath,
 } from "@/lib/classification/decisions";
 import { createClient, getCurrentUser } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/types";
+
+type ClassStatus = Database["public"]["Enums"]["class_status"];
 
 // CD-041: confirm, override and answer. Zod checks the form; the database functions check the
 // role, that the person saw the current state, and write the audit row
@@ -76,6 +79,7 @@ export async function confirmCode(
 
   const { error } = await supabase.rpc("confirm_classification", {
     p_classification: parsed.data.classificationId,
+    p_code: parsed.data.code,
     p_content_hash: parsed.data.contentHash,
   });
   if (error) return failure(fields, decisionMessage("confirm", error).message);
@@ -105,8 +109,10 @@ export async function overrideCode(
 
   const { error } = await supabase.rpc("override_classification", {
     p_product: parsed.data.productId,
-    // null for a product with no code yet (the generated types do not know it is nullable).
+    // All null for a product with no code yet (the generated types do not know they are nullable).
     p_expected: parsed.data.expectedId as string,
+    p_expected_code: parsed.data.expectedCode as string,
+    p_expected_status: parsed.data.expectedStatus as ClassStatus,
     p_code: parsed.data.code,
     p_reason: parsed.data.reason,
     p_content_hash: parsed.data.contentHash,

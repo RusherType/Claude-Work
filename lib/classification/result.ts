@@ -74,12 +74,21 @@ export function confidenceSegments(confidence: number): number {
 export const isLowConfidence = (confidence: number) =>
   confidence < LOW_CONFIDENCE;
 
-/** A link we are willing to render: https only (ruling URLs come from a crawler). */
-export function safeHttpsUrl(value: string | null | undefined): string | null {
+/** CBP's rulings site: the only host a ruling link may point to (the URLs come from a crawler). */
+const RULINGS_HOST = "rulings.cbp.gov";
+
+/** A ruling link we are willing to render: https on the CBP rulings site only. */
+export function rulingUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try {
     const url = new URL(value);
-    return url.protocol === "https:" ? url.toString() : null;
+    return url.protocol === "https:" &&
+      url.hostname === RULINGS_HOST &&
+      url.port === "" &&
+      url.username === "" &&
+      url.password === ""
+      ? url.toString()
+      : null;
   } catch {
     return null;
   }

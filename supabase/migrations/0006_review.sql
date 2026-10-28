@@ -8,6 +8,7 @@
 --   stale            the code or the product changed since the caller loaded it
 --   not_confirmable  the current code cannot be confirmed in its status (or has no code)
 --   unknown_code     not a 10-digit line of the tariff in force today
+--   broker_verified  only owners and admins replace a broker-verified code
 --   already_answered the question has an answer
 
 -- ============ 1. The tariff revision in force ============
@@ -32,31 +33,32 @@ language sql stable security invoker set search_path = '' as $$
   );
 $$;
 
--- The path from the heading down to a line: the closest line above it at each smaller indent.
--- Lines are stored in schedule order (tariff_lines.id), so that is the line's parent chain.
-create index if not exists tariff_lines_outline on tariff_lines (revision_id, indent, id);
+-- The path from the heading down to a line. Lines are stored in schedule order (tariff_lines.id,
+-- so the importer must insert each revision as one ordered stream), and a line's parent is the
+-- closest line above it with a smaller indent (indents can skip levels).
+create index if not exists tariff_lines_order on tariff_lines (revision_id, id);
 
 create or replace function hts_breadcrumb(p_revision uuid, p_code text)
 returns table (code text, indent integer, description text)
 language sql stable security invoker set search_path = '' as $$
-  with leaf as (
-    select t.id, t.indent, t.code, t.description from public.tariff_lines t
-    where t.revision_id = p_revision and t.code = p_code
-    order by t.is_leaf desc, t.id
-    limit 1
+  with recursive chain as (
+    (select t.id, t.indent, t.code, t.description, 0 as depth
+     from public.tariff_lines t
+     where t.revision_id = p_revision and t.code = p_code
+     order by t.is_leaf desc, t.id
+     limit 1)
+    union all
+    select a.id, a.indent, a.code, a.description, ch.depth + 1
+    from chain ch
+    cross join lateral (
+      select t.id, t.indent, t.code, t.description from public.tariff_lines t
+      where t.revision_id = p_revision and t.id < ch.id and t.indent < ch.indent
+      order by t.id desc
+      limit 1
+    ) a
+    where ch.indent > 0 and ch.depth < 20
   )
-  select a.code, a.indent, a.description
-  from leaf l
-  cross join lateral generate_series(0, l.indent - 1) as k(level)
-  cross join lateral (
-    select t.code, t.indent, t.description from public.tariff_lines t
-    where t.revision_id = p_revision and t.indent = k.level and t.id < l.id
-    order by t.id desc
-    limit 1
-  ) a
-  union all
-  select l.code, l.indent, l.description from leaf l
-  order by 2;
+  select chain.code, chain.indent, chain.description from chain order by chain.depth desc;
 $$;
 
 -- ============ 2. The review queue (CD-040) ============
@@ -112,31 +114,48 @@ language sql stable security invoker set search_path = '' as $$
 $$;
 
 -- ============ 3. Confirm and override (CD-041) ============
--- Confirm the current code as it is. p_content_hash is the product's content hash the caller
--- saw, so nobody confirms a code for product text they have not seen.
-create or replace function confirm_classification(p_classification uuid, p_content_hash text)
+-- Each function authorises from an unlocked read first (so nobody can lock another tenant's
+-- rows), then locks the product and then the classification or question: the same order as the
+-- product triggers, so decisions on one product run one at a time and never deadlock.
+
+-- Owners, admins and members of a live workspace.
+create or replace function can_decide(p_workspace uuid)
+returns boolean
+language sql stable security invoker set search_path = '' as $$
+  select p_workspace is not null
+    and public.has_role(p_workspace, array['owner', 'admin', 'member']::public.member_role[])
+    and not exists (select 1 from public.workspaces w
+                    where w.id = p_workspace and w.deleted_at is not null);
+$$;
+
+-- Confirm the current code as it is. p_code and p_content_hash are the code and the product's
+-- content hash the caller saw, so nobody confirms a code, or product text, they have not seen.
+create or replace function confirm_classification(
+  p_classification uuid, p_code text, p_content_hash text
+)
 returns uuid
 language plpgsql security definer set search_path = '' as $$
 declare
   uid uuid := auth.uid();
+  v_workspace uuid;
+  v_product uuid;
   c public.classifications%rowtype;
   v_hash text;
   v_revision uuid;
 begin
   if uid is null then raise exception 'not_authenticated' using errcode = '42501'; end if;
-  -- Product first, then the code: the same lock order as override and the product triggers.
-  select p.content_hash into v_hash from public.products p
-  where p.id = (select x.product_id from public.classifications x where x.id = p_classification)
-  for update;
-  select * into c from public.classifications where id = p_classification for update;
-  if not found
-     or not public.has_role(c.workspace_id, array['owner', 'admin', 'member']::public.member_role[])
-     or exists (select 1 from public.workspaces w
-                where w.id = c.workspace_id and w.deleted_at is not null) then
+  select x.workspace_id, x.product_id into v_workspace, v_product
+  from public.classifications x where x.id = p_classification;
+  if not public.can_decide(v_workspace) then
     raise exception 'not_allowed' using errcode = '42501';
   end if;
 
-  if not c.is_current or v_hash is distinct from p_content_hash then
+  select p.content_hash into v_hash from public.products p
+  where p.id = v_product and p.workspace_id = v_workspace
+  for update;
+  select * into c from public.classifications where id = p_classification for update;
+  if not c.is_current or c.code is distinct from p_code
+     or v_hash is distinct from p_content_hash then
     raise exception 'stale';
   end if;
   if c.code is null or c.status not in ('suggested', 'in_review', 'outdated') then
@@ -155,16 +174,21 @@ begin
   insert into public.audit_log (workspace_id, actor_id, action, entity, entity_id, data)
   values (c.workspace_id, uid, 'classification.confirm', 'classification', c.id,
     jsonb_build_object('product_id', c.product_id, 'market', c.market, 'code', c.code,
-      'previous_status', c.status, 'content_hash', v_hash));
+      'previous_status', c.status, 'confidence', c.confidence,
+      'agent_run_id', c.agent_run_id, 'tariff_revision_id', v_revision,
+      'content_hash', v_hash));
   return c.id;
 end $$;
 
 -- Replace the current code (or set the first one) with the caller's own code and reason. The
--- old row stays as history. p_expected is the current classification the caller saw (null
--- when the product had none).
+-- old row stays as history. p_expected, p_expected_code and p_expected_status are the current
+-- classification the caller saw (all null when the product had none). A broker-verified code is a paid record: only owners and admins
+-- (who may order broker checks, docs/03-security.md) can replace it.
 create or replace function override_classification(
   p_product uuid,
   p_expected uuid,
+  p_expected_code text,
+  p_expected_status public.class_status,
   p_code text,
   p_reason text,
   p_content_hash text,
@@ -182,23 +206,25 @@ declare
   v_id uuid;
 begin
   if uid is null then raise exception 'not_authenticated' using errcode = '42501'; end if;
-  -- Locking the product serialises decisions on it.
-  select p.workspace_id, p.content_hash into v_workspace, v_hash
-  from public.products p where p.id = p_product
-  for update;
-  if not found
-     or not public.has_role(v_workspace, array['owner', 'admin', 'member']::public.member_role[])
-     or exists (select 1 from public.workspaces w
-                where w.id = v_workspace and w.deleted_at is not null) then
+  select p.workspace_id into v_workspace from public.products p where p.id = p_product;
+  if not public.can_decide(v_workspace) then
     raise exception 'not_allowed' using errcode = '42501';
   end if;
 
+  select p.content_hash into v_hash from public.products p
+  where p.id = p_product and p.workspace_id = v_workspace
+  for update;
   select * into cur from public.classifications c
   where c.product_id = p_product and c.workspace_id = v_workspace and c.market = p_market
     and c.is_current
   for update;
-  if cur.id is distinct from p_expected or v_hash is distinct from p_content_hash then
+  if cur.id is distinct from p_expected or cur.code is distinct from p_expected_code
+     or cur.status is distinct from p_expected_status or v_hash is distinct from p_content_hash then
     raise exception 'stale';
+  end if;
+  if cur.status = 'broker_verified'
+     and not public.has_role(v_workspace, array['owner', 'admin']::public.member_role[]) then
+    raise exception 'broker_verified';
   end if;
   if v_reason is null or char_length(v_reason) not between 3 and 500
      or not public.is_clean_text(v_reason) or not public.is_not_blank(v_reason) then
@@ -222,62 +248,78 @@ begin
   values (v_workspace, uid, 'classification.override', 'classification', v_id,
     jsonb_build_object('product_id', p_product, 'market', p_market, 'code', p_code,
       'previous_code', cur.code, 'previous_status', cur.status, 'previous_id', cur.id,
-      'reason', v_reason, 'content_hash', v_hash));
+      'reason', v_reason, 'tariff_revision_id', v_revision, 'content_hash', v_hash));
   return v_id;
 end $$;
 
 -- ============ 4. Answering the agent's questions (Q in the queue) ============
--- Stores the answer. When the product has no open questions left, its code goes back to
+-- Only questions from the run behind the product's current `needs_answer` code can be answered
+-- (older ones are stale). When that run has no open questions left, the code goes back to
 -- 'queued' for the agent (CD-034 starts the re-run).
 create or replace function answer_agent_question(p_question uuid, p_answer text)
 returns void
 language plpgsql security definer set search_path = '' as $$
 declare
   uid uuid := auth.uid();
+  v_workspace uuid;
+  v_product uuid;
   q public.agent_questions%rowtype;
+  cur public.classifications%rowtype;
   v_answer text := btrim(p_answer);
 begin
   if uid is null then raise exception 'not_authenticated' using errcode = '42501'; end if;
-  select * into q from public.agent_questions where id = p_question for update;
-  if not found
-     or not public.has_role(q.workspace_id, array['owner', 'admin', 'member']::public.member_role[])
-     or exists (select 1 from public.workspaces w
-                where w.id = q.workspace_id and w.deleted_at is not null) then
+  select x.workspace_id, x.product_id into v_workspace, v_product
+  from public.agent_questions x where x.id = p_question;
+  if not public.can_decide(v_workspace) then
     raise exception 'not_allowed' using errcode = '42501';
   end if;
-  if q.answered_at is not null then raise exception 'already_answered'; end if;
   if v_answer is null or char_length(v_answer) not between 1 and 300
      or not public.is_clean_text(v_answer) or not public.is_not_blank(v_answer) then
     raise exception 'invalid_answer' using errcode = '22023';
   end if;
+
+  -- The product lock serialises answers to the same product, so the last answer always sees
+  -- the others and re-queues the code.
+  perform 1 from public.products p
+  where p.id = v_product and p.workspace_id = v_workspace
+  for update;
+  select * into q from public.agent_questions where id = p_question for update;
+  if q.answered_at is not null then raise exception 'already_answered'; end if;
+  select * into cur from public.classifications c
+  where c.product_id = v_product and c.workspace_id = v_workspace and c.is_current
+    and c.status = 'needs_answer' and c.agent_run_id is not distinct from q.agent_run_id
+  for update;
+  if not found then raise exception 'stale'; end if;
 
   update public.agent_questions
   set answer = v_answer, answered_by = uid, answered_at = now()
   where id = q.id;
 
   if not exists (select 1 from public.agent_questions o
-                 where o.product_id = q.product_id and o.workspace_id = q.workspace_id
+                 where o.product_id = v_product and o.workspace_id = v_workspace
+                   and o.agent_run_id is not distinct from q.agent_run_id
                    and o.answered_at is null) then
-    update public.classifications set status = 'queued'
-    where product_id = q.product_id and workspace_id = q.workspace_id and is_current
-      and status = 'needs_answer';
+    update public.classifications set status = 'queued' where id = cur.id;
   end if;
 
   insert into public.audit_log (workspace_id, actor_id, action, entity, entity_id, data)
-  values (q.workspace_id, uid, 'question.answer', 'agent_question', q.id,
-    jsonb_build_object('product_id', q.product_id));
+  values (v_workspace, uid, 'question.answer', 'agent_question', q.id,
+    jsonb_build_object('product_id', v_product, 'agent_run_id', q.agent_run_id,
+      'question', q.question, 'answer', v_answer));
 end $$;
 
 -- Signed-in users only; the functions check the role themselves.
 revoke execute on function revision_in_force(public.market_code), is_filing_code(uuid, text),
   hts_breadcrumb(uuid, text), review_position(uuid, uuid, public.market_code),
-  confirm_classification(uuid, text),
-  override_classification(uuid, uuid, text, text, text, public.market_code),
+  confirm_classification(uuid, text, text), can_decide(uuid),
+  override_classification(uuid, uuid, text, public.class_status, text, text, text,
+    public.market_code),
   answer_agent_question(uuid, text)
   from public, anon;
 grant execute on function revision_in_force(public.market_code), is_filing_code(uuid, text),
   hts_breadcrumb(uuid, text), review_position(uuid, uuid, public.market_code),
-  confirm_classification(uuid, text),
-  override_classification(uuid, uuid, text, text, text, public.market_code),
+  confirm_classification(uuid, text, text), can_decide(uuid),
+  override_classification(uuid, uuid, text, public.class_status, text, text, text,
+    public.market_code),
   answer_agent_question(uuid, text)
   to authenticated;
