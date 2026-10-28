@@ -482,3 +482,9 @@ round-1 findings fixed and found two small ones, now fixed:
 Updated to `next` and `eslint-config-next` 16.4.3 and `zod` 4.6.7, per the 48-hour rule in
 `docs/03-security.md`. Lint, typecheck, unit and database tests and the build pass; the audit
 is clean. CLAUDE.md still says "Next.js 16.3" in its stack line (left for the owner to update).
+
+**CD-040, CD-041 and CD-042 ticked.** The security audit passed and the reviewer approved after
+two rounds. CI is green at 2f14f35 on all three jobs, including the review-queue Playwright flow
+on desktop and mobile (answer with Q, J and K through the queue, evidence and rulings drawer,
+confirm with A, E to the product and back, shortcuts off, override with a reason) and the
+dependency audit after the Next.js 16.4.3 and Zod 4.6.7 security update.
