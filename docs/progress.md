@@ -465,10 +465,20 @@ findings; the reviewer asked for changes. CI was already green on 4b4bb10. Fixed
   - the CSP needs an `img-src` decision for seller images when it is tightened (CD-104);
   - rate limits on these actions come with CD-104.
 
-**CD-040 to CD-042 review, round 2.** CI was green on 3d7c59b; the reviewer confirmed all 12
+**CD-040 to CD-042 review, round 2.** On 3d7c59b, Playwright and the migration checks passed;
+the first job failed only at the production dependency audit (below). The reviewer confirmed all 12
 round-1 findings fixed and found two small ones, now fixed:
 - the code the person saw is sent back as stored (bounded, not normalised): a stored code with
   dots, or a malformed one, could otherwise never be confirmed or overridden (database test
   overrides a stored 8-digit code);
 - the "shortcuts off" e2e step now moves focus off the checkbox before pressing E, so it can
   fail; after a failed override, focus goes to the first field in error.
+
+**Security patch (dependencies):** new advisories made `pnpm audit --prod` fail in CI:
+- Next.js 16.0–16.4.0: two critical remote code execution bugs (image optimisation with SVG,
+  and `use cache` returning typed arrays) and a Server Actions denial of service;
+- Zod below 4.6.6: memory exhaustion on oversized collections.
+
+Updated to `next` and `eslint-config-next` 16.4.3 and `zod` 4.6.7, per the 48-hour rule in
+`docs/03-security.md`. Lint, typecheck, unit and database tests and the build pass; the audit
+is clean. CLAUDE.md still says "Next.js 16.3" in its stack line (left for the owner to update).
