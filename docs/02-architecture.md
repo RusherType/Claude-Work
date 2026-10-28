@@ -15,7 +15,7 @@ Shopify store --webhooks--> Next.js app on Vercel <--> Seller (browser / Shopify
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| Web app | Next.js 16.3 (App Router, Server Actions), React 19, TypeScript strict | One codebase for app, API and Shopify app |
+| Web app | Next.js 16.4 (App Router, Server Actions), React 19, TypeScript strict | One codebase for app, API and Shopify app |
 | UI | Tailwind CSS v4, shadcn/ui, TanStack Table, Recharts | Dense data tables fast |
 | Database | Supabase Postgres + pgvector, Row Level Security | Tenant isolation in the database |
 | Auth | Supabase Auth (magic link, Google) + Shopify OAuth | No auth code to maintain |
