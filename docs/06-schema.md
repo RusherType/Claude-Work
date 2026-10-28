@@ -190,6 +190,26 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
     `['GRI 1', 'GRI 6', ...]`, and `agent_questions.options` is 2–5 answer strings. The page reads
     them leniently (`lib/classification/result.ts`) and leaves out anything malformed.
 
+- **Quotes (CD-051, `0007_quotes.sql`):**
+  - `quotes` stores what was quoted:
+    - name, origin, mode, entry date and currency;
+    - the exchange rate the person entered (`fx_rate_to_usd`, US dollars per unit, never built
+      in), plus carrier, status (`ok` / `needs_review`) and the tariff revision used;
+    - `totals`: the engine's shipment result (entry type, shipment fees, totals, warnings) and
+      data notices.
+  - `quote_lines` keep the title, SKU and code used, the quantity and unit value, whether the code
+    was only suggested, and the engine's line result (`breakdown`), in `position` order.
+  - Checks match the calculator's Zod schema. Deleting a product sets `product_id` to null and
+    keeps the line.
+  - `save_quote(workspace, quote, lines)` (security invoker, so RLS applies) writes a quote and
+    its 1–100 lines in one transaction. The app prices the quote on the server with the
+    landed-cost engine before saving; a saved quote is shown and printed as stored, never
+    recomputed.
+  - **Column 2 countries** are a reserved `special_programs` row with symbol `C2` (HTSUS General
+    Note 3(b)): countries, effective dates, source and the admin publish workflow, like any
+    program. The calculator reads it as the engine's `column2Countries` and never treats `C2` as
+    a program a line can claim. Until it is published, no origin pays Column 2 rates.
+
 ## Tests
 
 - `tests/db/rls-coverage.test.ts` statically checks every migration: RLS on every table, a required

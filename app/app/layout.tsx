@@ -58,6 +58,9 @@ export default async function AppLayout({ children }: LayoutProps<"/app">) {
                   </span>
                 ) : null}
               </Link>
+              <Link href="/app/landed-cost" className="text-sm">
+                Landed cost
+              </Link>
               <Link href="/app/catalog/import" className="text-sm">
                 Import products
               </Link>

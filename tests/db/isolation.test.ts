@@ -48,6 +48,13 @@ const newIds = (): Ids =>
   Object.fromEntries(CHILD_KEYS.map((k) => [k, randomUUID()]));
 const id: Record<W, Ids> = { A: newIds(), B: newIds() };
 
+// Valid quote and line values (0007_quotes.sql checks them), so each test meets only RLS.
+const QUOTE_COLS =
+  "name, origin, mode, entry_date, currency, fx_rate_to_usd, status, totals";
+const QUOTE_VALUES = "'Q', 'CN', 'express', '2026-10-01', 'USD', 1, 'ok', '{}'";
+const LINE_COLS = "quantity, unit_value, code_used, title, position, breakdown";
+const LINE_VALUES = "1, 1, '6109100012', 'Tee', 1, '{}'";
+
 // One insert per tenant table. `ids` holds the row's own id and its parents' ids.
 type Insert = (w: string, ids: Ids, actor: string) => [string, unknown[]];
 const INSERT: Record<string, Insert> = {
@@ -76,11 +83,11 @@ const INSERT: Record<string, Insert> = {
     [ids.question, w, ids.product, ids.run],
   ],
   quotes: (w, ids) => [
-    `insert into quotes (id, workspace_id) values ($1, $2)`,
+    `insert into quotes (id, workspace_id, ${QUOTE_COLS}) values ($1, $2, ${QUOTE_VALUES})`,
     [ids.quote, w],
   ],
   quote_lines: (w, ids) => [
-    `insert into quote_lines (id, quote_id, workspace_id, product_id, quantity) values ($1, $2, $3, $4, 1)`,
+    `insert into quote_lines (id, quote_id, workspace_id, product_id, ${LINE_COLS}) values ($1, $2, $3, $4, ${LINE_VALUES})`,
     [ids.quoteLine, ids.quote, w, ids.product],
   ],
   alerts: (w, ids) => [
@@ -572,11 +579,11 @@ suite("tenant isolation (live database)", () => {
         [ws.A, id.A.product, id.B.run],
       ],
       quote_lines_workspace_id_quote_id_fkey: () => [
-        `insert into quote_lines (quote_id, workspace_id, quantity) values ($1, $2, 1)`,
+        `insert into quote_lines (quote_id, workspace_id, ${LINE_COLS}) values ($1, $2, ${LINE_VALUES})`,
         [id.B.quote, ws.A],
       ],
       quote_lines_workspace_id_product_id_fkey: () => [
-        `insert into quote_lines (quote_id, workspace_id, product_id, quantity) values ($1, $2, $3, 1)`,
+        `insert into quote_lines (quote_id, workspace_id, product_id, ${LINE_COLS}) values ($1, $2, $3, ${LINE_VALUES})`,
         [id.A.quote, ws.A, id.B.product],
       ],
       alert_items_workspace_id_alert_id_fkey: () => [

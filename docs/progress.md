@@ -488,3 +488,51 @@ two rounds. CI is green at 2f14f35 on all three jobs, including the review-queue
 on desktop and mobile (answer with Q, J and K through the queue, evidence and rulings drawer,
 confirm with A, E to the product and back, shortcuts off, override with a reason) and the
 dependency audit after the Next.js 16.4.3 and Zod 4.6.7 security update.
+
+## 2026-10-28 (CD-051)
+
+**CD-051 (landed-cost calculator):**
+- **Page `/app/landed-cost`:**
+  - search the catalog and add products (codes come from each product's current US
+    classification; products with no code can't be added);
+  - quantities and value per item; origin (taken from the first product), mode, entry date and
+    currency;
+  - outside USD, the person enters "US dollars for 1 <currency>"; ClearDuty never assumes a rate;
+  - calculate, then save the quote with a name. Figures are marked stale as soon as an input
+    changes.
+  - Viewers can price but not save.
+- **Breakdown:** every line shows its general, special or Column 2 duty and each overlay, with
+  the basis and amount, and the source with its effective dates. It then shows the line's share
+  of the fees, the shipment fees (informal or formal entry) and a bold total. Suggested codes and
+  review reasons are shown, and so is a "Needs review" banner.
+- **Server:**
+  - Zod-validated actions;
+  - the engine runs only on the server, on published measures, fees and programs (explicit
+    columns, `published = true`) and the tariff revision in force;
+  - saving prices the quote again rather than trusting the browser's copy.
+- **Saved quotes:** shown as stored (Zod-checked on the way back, https-only source links). A
+  route handler downloads the quote as a PDF (pdf-lib; characters the standard fonts can't draw
+  become "?").
+- **Data:**
+  - `0007_quotes.sql` adds quote columns and checks, line snapshots and the atomic `save_quote`;
+  - deleting a product keeps its quote lines;
+  - Column 2 countries are the reserved `C2` row in `special_programs` (no hard-coded list).
+- **Fixes found while probing in a browser:**
+  - country names come from each runtime's `Intl` data, and Node and Chrome differ
+    ("Falkland Islands (Islas Malvinas)"), which caused a hydration error, so the client gets
+    the server's list;
+  - long country names made the page wider than a phone.
+- **Tests:**
+  - unit: row mapping, the input schema and the PDF, plus an end-to-end engine case worked by
+    hand ($420.00 of T-shirts from China → $523.49);
+  - database: `save_quote` roles, cross-workspace products, every value check, and kept lines
+    after a product is deleted;
+  - Playwright: price, a stale result, a formal entry going to review, a field error, save, PDF,
+    and the saved list.
+  - E2E tariff data is now one shared, idempotent seed (`tests/e2e/tariff.ts`).
+- **Follow-ups:**
+  - embed a Unicode font in the PDF for non-Latin titles (with CD-070/071);
+  - claiming a special program per line (needs certificate-of-origin facts);
+  - CD-052 (order to quote) reuses `computeQuote`;
+  - the owner should publish a `C2` row (Cuba, North Korea, Russia, Belarus, per General Note
+    3(b)) in the admin, with its source.

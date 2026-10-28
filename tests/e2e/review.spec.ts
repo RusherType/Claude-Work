@@ -1,42 +1,11 @@
 import { expect, test, type Page } from "@playwright/test";
 import { e2eDatabaseUrl, withLocalDb } from "./db";
 import { hasSupabase, signInFromSignInPage, uniqueEmail } from "./helpers";
+import { REVISION, seedTariff } from "./tariff";
 
 // CD-040 to CD-042: work through the review queue with the keyboard (answer a question, confirm a
 // suggestion), see the evidence on the card, then override a code on the product page. The agent
 // is not built yet, so its output is seeded straight into the local database (CI).
-
-const REVISION = "00000000-0000-4000-8000-0000000e2e01";
-
-async function seedTariff() {
-  // Shared and idempotent: every run and browser project seeds the same rows.
-  await withLocalDb(async (db) => {
-    await db.query(
-      `insert into public.tariff_revisions (id, market, label, effective_from)
-       values ($1, 'US', 'e2e-review', current_date)
-       on conflict (id) do update set effective_from = current_date`,
-      [REVISION],
-    );
-    const lines: [string, number, string, boolean][] = [
-      ["6109", 0, "T-shirts, singlets, tank tops, knitted", false],
-      ["61091000", 1, "Of cotton", false],
-      ["6109100012", 2, "Men's T-shirts, all white", true],
-      ["6109100040", 2, "Men's T-shirts, other", true],
-    ];
-    for (const [code, indent, description, leaf] of lines)
-      await db.query(
-        `insert into public.tariff_lines (revision_id, code, indent, description, is_leaf)
-         values ($1, $2, $3, $4, $5) on conflict do nothing`,
-        [REVISION, code, indent, description, leaf],
-      );
-    await db.query(
-      `insert into public.rulings (number, collection, ruling_date, subject, status, url)
-       values ('N300100', 'NY', '2018-08-01', 'Tariff classification of a men''s cotton T-shirt',
-               'active', 'https://rulings.cbp.gov/ruling/N300100')
-       on conflict do nothing`,
-    );
-  });
-}
 
 async function seedAgentOutput(
   skuSuggested: string,

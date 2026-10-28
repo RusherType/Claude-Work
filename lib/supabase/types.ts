@@ -851,9 +851,12 @@ export type Database = {
           breakdown: Json | null;
           code_used: string | null;
           id: string;
+          position: number | null;
           product_id: string | null;
           quantity: number;
           quote_id: string;
+          sku: string | null;
+          title: string | null;
           unit_value: number | null;
           used_suggested: boolean | null;
           workspace_id: string;
@@ -863,9 +866,12 @@ export type Database = {
           breakdown?: Json | null;
           code_used?: string | null;
           id?: string;
+          position?: number | null;
           product_id?: string | null;
           quantity: number;
           quote_id: string;
+          sku?: string | null;
+          title?: string | null;
           unit_value?: number | null;
           used_suggested?: boolean | null;
           workspace_id: string;
@@ -874,9 +880,12 @@ export type Database = {
           breakdown?: Json | null;
           code_used?: string | null;
           id?: string;
+          position?: number | null;
           product_id?: string | null;
           quantity?: number;
           quote_id?: string;
+          sku?: string | null;
+          title?: string | null;
           unit_value?: number | null;
           used_suggested?: boolean | null;
           workspace_id?: string;
@@ -914,40 +923,65 @@ export type Database = {
       };
       quotes: {
         Row: {
+          carrier: string | null;
           created_at: string | null;
           created_by: string | null;
+          currency: string | null;
           destination: Database["public"]["Enums"]["market_code"] | null;
+          entry_date: string | null;
+          fx_rate_to_usd: number | null;
           id: string;
           mode: string | null;
           name: string | null;
           origin: string | null;
+          status: string | null;
+          tariff_revision_id: string | null;
           totals: Json | null;
           workspace_id: string;
         };
         ComputedFields: never;
         Insert: {
+          carrier?: string | null;
           created_at?: string | null;
           created_by?: string | null;
+          currency?: string | null;
           destination?: Database["public"]["Enums"]["market_code"] | null;
+          entry_date?: string | null;
+          fx_rate_to_usd?: number | null;
           id?: string;
           mode?: string | null;
           name?: string | null;
           origin?: string | null;
+          status?: string | null;
+          tariff_revision_id?: string | null;
           totals?: Json | null;
           workspace_id: string;
         };
         Update: {
+          carrier?: string | null;
           created_at?: string | null;
           created_by?: string | null;
+          currency?: string | null;
           destination?: Database["public"]["Enums"]["market_code"] | null;
+          entry_date?: string | null;
+          fx_rate_to_usd?: number | null;
           id?: string;
           mode?: string | null;
           name?: string | null;
           origin?: string | null;
+          status?: string | null;
+          tariff_revision_id?: string | null;
           totals?: Json | null;
           workspace_id?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "quotes_tariff_revision_id_fkey";
+            columns: ["tariff_revision_id"];
+            isOneToOne: false;
+            referencedRelation: "tariff_revisions";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "quotes_workspace_id_fkey";
             columns: ["workspace_id"];
@@ -1626,6 +1660,10 @@ export type Database = {
         Returns: string;
       };
       revoke_invitation: { Args: { p_invitation: string }; Returns: undefined };
+      save_quote: {
+        Args: { p_lines: Json; p_quote: Json; p_workspace: string };
+        Returns: string;
+      };
       show_limit: { Args: Record<PropertyKey, never>; Returns: number };
       show_trgm: { Args: { "": string }; Returns: string[] };
       workspace_members: {
