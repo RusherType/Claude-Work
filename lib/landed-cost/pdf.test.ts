@@ -88,3 +88,28 @@ describe("quotePdf", () => {
     expect((await PDFDocument.load(bytes)).getPageCount()).toBeGreaterThan(3);
   });
 });
+
+describe("a quote stuffed to every limit", () => {
+  it("still prints quickly", async () => {
+    const long = "W".repeat(500);
+    const stuffed = quote(Array.from({ length: 100 }, (_, i) => `${long}${i}`));
+    for (const l of stuffed.lines) {
+      l.result = {
+        ...l.result,
+        components: Array.from({ length: 50 }, () => ({
+          kind: "overlay" as const,
+          label: long,
+          basis: long,
+          amount: "1.00",
+        })),
+        warnings: Array.from({ length: 50 }, () => long),
+      };
+    }
+    const started = performance.now();
+    const bytes = await quotePdf(stuffed, long);
+    const seconds = (performance.now() - started) / 1000;
+    expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
+    // Was about 5 minutes before the line cut was bounded (security audit H1).
+    expect(seconds).toBeLessThan(5);
+  }, 20_000);
+});

@@ -35,9 +35,14 @@ const MARGIN = 48;
 const PAGE: [number, number] = [612, 792]; // US Letter
 const GREY = rgb(0.36, 0.38, 0.42);
 
+/** Bounds on the work one PDF can cost, whatever a stored quote holds. */
+const MAX_LINE_CHARS = 300;
+const MAX_ROWS = 4000;
+
 class Writer {
   page: PDFPage;
   y: number;
+  private rows = 0;
   constructor(
     private doc: PDFDocument,
     private font: PDFFont,
@@ -67,9 +72,23 @@ class Writer {
     const font = opts.bold ? this.bold : this.font;
     const x = opts.x ?? MARGIN;
     const width = opts.width ?? PAGE[0] - MARGIN - x;
-    let t = pdfText(text);
-    while (t.length > 1 && font.widthOfTextAtSize(t, size) > width)
-      t = `${t.slice(0, -2)}…`;
+    if (this.rows >= MAX_ROWS) return;
+    if (++this.rows === MAX_ROWS)
+      text = "(The rest of this quote is too long to print.)";
+    // No line can show more than a few hundred characters: cut first, then find the longest
+    // prefix that fits by bisection, so a long stored string costs a handful of measurements.
+    let t = pdfText(text.slice(0, MAX_LINE_CHARS));
+    if (font.widthOfTextAtSize(t, size) > width) {
+      let lo = 0;
+      let hi = t.length;
+      while (lo < hi) {
+        const mid = Math.ceil((lo + hi) / 2);
+        if (font.widthOfTextAtSize(`${t.slice(0, mid)}…`, size) <= width)
+          lo = mid;
+        else hi = mid - 1;
+      }
+      t = `${t.slice(0, lo)}…`;
+    }
     this.room(size + 4);
     this.page.drawText(t, {
       x,

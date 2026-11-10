@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { COUNTRIES } from "@/lib/countries";
+import { MONEY } from "@/lib/landed-cost/stored";
 import { createClient } from "@/lib/supabase/server";
 import { Decimal, formatUsd } from "@/lib/tariff/money";
 import { getWorkspaceContext } from "@/lib/workspace";
@@ -83,7 +84,7 @@ export default async function LandedCostPage() {
                   <span className="text-muted text-xs">
                     {q.created_at?.slice(0, 10)}
                     {typeof q.landedCost === "string" &&
-                    /^\d{1,12}(\.\d{1,2})?$/.test(q.landedCost)
+                    MONEY.test(q.landedCost)
                       ? ` · ${formatUsd(new Decimal(q.landedCost))}`
                       : ""}
                     {q.status === "needs_review" ? " · Needs review" : ""}

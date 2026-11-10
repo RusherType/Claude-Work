@@ -1,9 +1,10 @@
+import { z } from "zod";
 import { loadSavedQuote } from "@/lib/landed-cost/saved";
 import { quotePdf } from "@/lib/landed-cost/pdf";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceContext } from "@/lib/workspace";
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const quoteId = z.uuid();
 
 // CD-051: the saved quote as a PDF, for the signed-in member's current workspace only.
 export async function GET(
@@ -11,7 +12,8 @@ export async function GET(
   ctx: RouteContext<"/app/landed-cost/quotes/[id]/pdf">,
 ) {
   const { id } = await ctx.params;
-  if (!UUID.test(id)) return new Response("Not found", { status: 404 });
+  if (!quoteId.safeParse(id).success)
+    return new Response("Not found", { status: 404 });
   const session = await getWorkspaceContext();
   if (!session?.workspace)
     return new Response("Sign in first", { status: 401 });

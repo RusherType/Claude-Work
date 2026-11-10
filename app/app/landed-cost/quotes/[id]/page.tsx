@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { z } from "zod";
 import { loadSavedQuote } from "@/lib/landed-cost/saved";
 import { createClient } from "@/lib/supabase/server";
 import { primary } from "@/lib/ui/styles";
@@ -9,7 +10,7 @@ import { CostBreakdown } from "../../cost-breakdown";
 
 export const metadata: Metadata = { title: "Quote · ClearDuty" };
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const quoteId = z.uuid();
 
 // CD-051: a saved quote, exactly as it was priced (not recomputed with today's data).
 export default async function QuotePage(
@@ -20,7 +21,7 @@ export default async function QuotePage(
   if (!ctx.workspace) redirect("/app");
   const { id } = await props.params;
   const { saved } = await props.searchParams;
-  if (!UUID.test(id)) notFound();
+  if (!quoteId.safeParse(id).success) notFound();
   const supabase = await createClient();
   if (!supabase) throw new Error("Supabase is not configured");
 

@@ -10,7 +10,9 @@ import type {
   LineResult,
 } from "@/lib/tariff/landed-cost/types";
 
-const money = z.string().regex(/^-?\d{1,12}(\.\d{1,2})?$/);
+/** A US-dollar amount as the engine writes it. Wide enough for the largest quote the form allows. */
+export const MONEY = /^-?\d{1,30}(\.\d{1,2})?$/;
+const money = z.string().regex(MONEY);
 const shortText = z.string().max(500);
 const httpsUrl = z
   .string()
@@ -96,4 +98,42 @@ export function totalsToStore(
     warnings: result.warnings,
     notices,
   };
+}
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** The measure and fee rows a stored breakdown points at (valid ids only, no duplicates). */
+export function referencedRows(components: Component[]): {
+  tariff_measures: string[];
+  fee_schedules: string[];
+} {
+  const out = {
+    tariff_measures: new Set<string>(),
+    fee_schedules: new Set<string>(),
+  };
+  for (const c of components) {
+    const s = c.source;
+    if (s && s.table !== "tariff_lines" && UUID.test(s.id))
+      out[s.table].add(s.id);
+  }
+  return {
+    tariff_measures: [...out.tariff_measures],
+    fee_schedules: [...out.fee_schedules],
+  };
+}
+
+/**
+ * Source links as the reference rows have them now (`urls` keyed "table:id"), never as stored:
+ * a quote saved with a made-up link shows no link at all.
+ */
+export function relinkSources(
+  components: Component[],
+  urls: ReadonlyMap<string, string>,
+): Component[] {
+  return components.map((c) => {
+    const s = c.source;
+    if (!s || s.table === "tariff_lines") return c;
+    const url = httpsUrl.safeParse(urls.get(`${s.table}:${s.id}`));
+    return { ...c, source: { ...s, sourceUrl: url.success ? url.data : null } };
+  });
 }
