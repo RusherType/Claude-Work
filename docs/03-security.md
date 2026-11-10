@@ -56,6 +56,7 @@ Every row of customer data belongs to one workspace, and Postgres Row Level Secu
 ## Audit, privacy and retention
 
 - `audit_log` append-only (no update/delete policy).
+- Saved quotes are written only through `save_quote` (audited); clients cannot insert, edit or delete quote rows. The quote PDF is limited in size and work per request.
 - Code decisions are made only through database functions (`confirm_classification`, `override_classification`, `answer_agent_question`): they check the role and that the person saw the current product and code, and write the audit row in the same transaction. An override keeps the replaced code as history with the reason given. Only owners and admins can replace a broker-verified code.
 - Business and catalog data only; order data deleted after 90 days.
 - GDPR/UK GDPR: DPA, subprocessor list (Supabase, Vercel, Anthropic, Voyage, Stripe, Resend, Inngest, Sentry, PostHog), export/delete within 30 days.

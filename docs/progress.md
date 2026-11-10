@@ -536,3 +536,46 @@ dependency audit after the Next.js 16.4.3 and Zod 4.6.7 security update.
   - CD-052 (order to quote) reuses `computeQuote`;
   - the owner should publish a `C2` row (Cuba, North Korea, Russia, Belarus, per General Note
     3(b)) in the admin, with its source.
+
+## 2026-11-10 (CD-051 review, round 1)
+
+The reviewer asked for changes and the security audit found one blocking issue. CI on fc75e68
+failed in Playwright on the review-queue flow (mobile), not on the calculator. All fixed:
+- **PDF denial of service (audit, high):** a quote stuffed with long text took minutes to
+  print, blocking the server. Text is now cut before measuring, the cut is found by bisection,
+  and a PDF has a row limit; a quote at every limit prints in well under a second (tested).
+- **Quotes can't be edited or forged afterwards:** clients no longer write quote rows.
+  `save_quote` is the only way in, is audited, and holds one line per position (at most 100).
+  New checks refuse NaN, out-of-range dates and oversized JSON.
+- **Base rates follow the entry date:** rates came from today's tariff revision while
+  measures and fees used the entry date. `revision_on(market, date)` fixes that.
+- **Column 2 not published → review:** goods from Column 2 countries were quietly priced at
+  General rates until a `C2` row existed. Such quotes now need review, with a notice. The
+  engine got an explicit `column2ListMissing` flag (the existing test that `null` is invalid
+  input stays as it was).
+- **Exchange rate never pre-filled:** adding a first product priced in EUR left the rate at
+  1, and switching between two non-USD currencies kept the old rate. Any currency change now
+  clears it.
+- **No stale figures:** while a recalculation runs, the old breakdown is hidden and Save is
+  disabled. Save also refuses when the server's figures differ from the total that was shown.
+- **Hard rules:**
+  - line value and weight are multiplied in `lib/tariff/money` (`lineValue`, `lineQuantity`);
+  - search results say "Suggested, not confirmed" or "Confirmed";
+  - the PDF route and quote page check ids with Zod.
+- **Saved quotes:** large quotes that saved but could not be reopened now round-trip
+  (tested); "Source" links come from the published reference rows, not the stored JSON.
+- **Accessibility:** search results and the calculated total are announced to screen readers.
+- **Smaller:** a note when a product's catalog origin differs from the quote's origin; the
+  entry date help says it starts as today in UTC.
+- **CI fix (review queue e2e):** on phones the dev-mode indicator covered the shortcuts
+  checkbox, and Q was sometimes pressed before the page was listening. The test now toggles by
+  keyboard and retries Q until the page responds.
+- **Tests:** 463 unit and 327 database tests. New:
+  - `computeQuote` against a recording stand-in: workspace scope, published rows only, entry
+    date, missing data, malformed data;
+  - the stored-quote guard, the quote lockdown, `revision_on`;
+  - e2e: a suggested code, rate clearing, and no PDF without a session.
+- **Follow-ups:**
+  - rate limits on these actions and the PDF route (CD-104);
+  - `pdf-lib` is unmaintained (last release 2021): track a maintained fork;
+  - deleting a quote needs a `delete_quote` function if wanted.

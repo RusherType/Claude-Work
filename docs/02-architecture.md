@@ -50,7 +50,8 @@ together.
 
 - **Customs value.** Each line's value × the shipment exchange rate, rounded half up to the cent.
 - **Base duty.**
-  - An origin in the Column 2 list pays the Column 2 rate.
+  - An origin in the Column 2 list pays the Column 2 rate. When no list is on file for the
+    entry date (`column2ListMissing`), every line pays the General rate and goes to review.
   - A claimed program pays the Special rate only when the program is listed for the line and the
     origin qualifies:
     - With a program row in force (from the HTSUS General Notes), the origin must be in its

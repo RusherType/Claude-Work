@@ -198,17 +198,25 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
     - `totals`: the engine's shipment result (entry type, shipment fees, totals, warnings) and
       data notices.
   - `quote_lines` keep the title, SKU and code used, the quantity and unit value, whether the code
-    was only suggested, and the engine's line result (`breakdown`), in `position` order.
-  - Checks match the calculator's Zod schema. Deleting a product sets `product_id` to null and
-    keeps the line.
-  - `save_quote(workspace, quote, lines)` (security invoker, so RLS applies) writes a quote and
-    its 1–100 lines in one transaction. The app prices the quote on the server with the
-    landed-cost engine before saving; a saved quote is shown and printed as stored, never
-    recomputed.
+    was only suggested, and the engine's line result (`breakdown`). There is one line per
+    `position` (1–100), so a quote holds at most 100 lines.
+  - Checks match the calculator's Zod schema and refuse NaN, dates outside 2000–2100 and JSON
+    over 64 KB. Deleting a product sets `product_id` to null and keeps the line.
+  - **Writes only through `save_quote(workspace, quote, lines)`** (security definer; owners,
+    admins and members of a live workspace; one transaction; audited as `quote.save`). Clients
+    cannot insert, edit or delete quote rows, so a saved quote is never changed afterwards.
+    The figures are the caller's own: the app prices on the server before saving, but a member
+    calling the function directly can save any figures under their own name.
+  - A saved quote is shown and printed as stored, never recomputed. On the way back it is
+    checked with Zod, and "Source" links are taken from the published measure and fee rows by
+    id, never from the stored JSON.
+  - `revision_on(market, date)` is the tariff revision in force on a date: a quote's base rates
+    come from the revision in force on its entry date, like its measures, fees and programs.
   - **Column 2 countries** are a reserved `special_programs` row with symbol `C2` (HTSUS General
     Note 3(b)): countries, effective dates, source and the admin publish workflow, like any
     program. The calculator reads it as the engine's `column2Countries` and never treats `C2` as
-    a program a line can claim. Until it is published, no origin pays Column 2 rates.
+    a program a line can claim. While no `C2` row is in force on the entry date, every quote
+    is priced at General rates and marked `needs_review`, with a notice.
 
 ## Tests
 
