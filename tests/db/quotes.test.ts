@@ -8,6 +8,7 @@ import { connect, describeDb, signInAs, type DbError } from "./helpers";
 const ws = randomUUID();
 const other = randomUUID();
 const user = {
+  owner: randomUUID(),
   member: randomUUID(),
   viewer: randomUUID(),
   outsider: randomUUID(),
@@ -23,7 +24,7 @@ const quote = {
   fx_rate_to_usd: "1",
   carrier: "",
   status: "ok",
-  totals: { customsValue: "420.00", landedCost: "523.49" },
+  totals: { totals: { customsValue: "420.00", landedCost: "523.49" } },
 };
 const line = (product: string | null, over: Record<string, unknown> = {}) => ({
   product_id: product,
@@ -100,8 +101,8 @@ describeDb("quotes (live database)", () => {
     );
     await db.query(
       `insert into memberships (workspace_id, user_id, role)
-       values ($1, $3, 'member'), ($1, $4, 'viewer'), ($2, $5, 'owner')`,
-      [ws, other, user.member, user.viewer, user.outsider],
+       values ($1, $3, 'member'), ($1, $4, 'viewer'), ($2, $5, 'owner'), ($1, $6, 'owner')`,
+      [ws, other, user.member, user.viewer, user.outsider, user.owner],
     );
     await db.query("commit");
   });
@@ -242,6 +243,168 @@ describeDb("quotes (live database)", () => {
             code_used: "6109100012",
           },
         ]);
+      }));
+  });
+
+  it("lets owners save too, and writes an audit row", () =>
+    scenario(async () => {
+      const p = await seedProduct();
+      let id: string | undefined;
+      await as(user.owner, async () => {
+        id = (await save(ws, quote, [line(p)])).id;
+        expect(id).toBeDefined();
+      });
+      const audit = await db.query(
+        "select actor_id, action, data from audit_log where entity_id = $1",
+        [id],
+      );
+      expect(audit.rows).toEqual([
+        {
+          actor_id: user.owner,
+          action: "quote.save",
+          data: {
+            name: "November order",
+            status: "ok",
+            lines: 1,
+            landed_cost: "523.49",
+          },
+        },
+      ]);
+    }));
+
+  it("refuses to save into a deleted workspace", () =>
+    scenario(async () => {
+      const p = await seedProduct();
+      await db.query("update workspaces set deleted_at = now() where id = $1", [
+        ws,
+      ]);
+      await as(user.member, async () => {
+        expect((await save(ws, quote, [line(p)])).error?.code).toBe("42501");
+      });
+    }));
+
+  it("refuses anything that is not a quote object with a list of lines", () =>
+    scenario(async () => {
+      const p = await seedProduct();
+      await as(user.member, async () => {
+        expect((await save(ws, [quote], [line(p)])).error?.code).toBe("22023");
+        expect((await save(ws, quote, { 0: line(p) })).error?.code).toBe(
+          "22023",
+        );
+        expect((await save(ws, "quote", "lines")).error?.code).toBe("22023");
+      });
+    }));
+
+  it.each([
+    [{ fx_rate_to_usd: "NaN" }, {}],
+    [{ entry_date: "infinity" }, {}],
+    [{ entry_date: "1999-12-31" }, {}],
+    [{ totals: { pad: "x".repeat(70_000), n: 1 } }, {}],
+    [{}, { unit_value: "NaN" }],
+    [{}, { breakdown: { pad: "x".repeat(70_000) } }],
+  ] as [Record<string, unknown>, Record<string, unknown>][])(
+    "refuses values that are not real figures or are oversized (%j, %j)",
+    (q, lineOver) =>
+      scenario(async () => {
+        const p = await seedProduct();
+        await as(user.member, async () => {
+          const { error } = await save(ws, { ...quote, ...q }, [
+            line(p, lineOver),
+          ]);
+          expect(error?.code).toBe("23514");
+        });
+      }),
+  );
+
+  it("cannot be written, edited or deleted directly, by anyone", () =>
+    scenario(async () => {
+      const p = await seedProduct();
+      let id: string | undefined;
+      await as(user.member, async () => {
+        id = (await save(ws, quote, [line(p)])).id;
+      });
+      const attempt = async (sql: string, params: unknown[]) => {
+        await db.query("savepoint w");
+        try {
+          await db.query(sql, params);
+          await db.query("release savepoint w");
+          return null;
+        } catch (e) {
+          await db.query("rollback to savepoint w");
+          return (e as DbError).code;
+        }
+      };
+      for (const uid of [user.owner, user.member, user.viewer])
+        await as(uid, async () => {
+          for (const [sql, params] of [
+            ["update quotes set name = 'Edited' where id = $1", [id]],
+            ["update quotes set totals = '{}' where id = $1", [id]],
+            ["delete from quotes where id = $1", [id]],
+            [
+              "update quote_lines set used_suggested = false where quote_id = $1",
+              [id],
+            ],
+            ["delete from quote_lines where quote_id = $1", [id]],
+            [
+              `insert into quotes (workspace_id, name, origin, mode, entry_date, currency,
+                 fx_rate_to_usd, status, totals)
+               values ($1, 'Direct', 'CN', 'express', '2026-11-01', 'USD', 1, 'ok', '{}')`,
+              [ws],
+            ],
+          ] as [string, unknown[]][])
+            expect(await attempt(sql, params), sql).toBe("42501");
+        });
+      const kept = await db.query("select name from quotes where id = $1", [
+        id,
+      ]);
+      expect(kept.rows).toEqual([{ name: "November order" }]);
+    }));
+
+  it("keeps one line per position (so at most 100 lines per quote)", () =>
+    scenario(async () => {
+      const p = await seedProduct();
+      let id: string | undefined;
+      await as(user.member, async () => {
+        id = (await save(ws, quote, [line(p)])).id;
+      });
+      // Even the table owner cannot add a second line at a position.
+      await db.query("savepoint dup");
+      const dup = await db
+        .query(
+          `insert into quote_lines (quote_id, workspace_id, quantity, unit_value, code_used,
+             title, position, breakdown)
+           values ($1, $2, 1, 1, '6109100012', 'Tee', 1, '{}')`,
+          [id, ws],
+        )
+        .then(
+          () => null,
+          (e: DbError) => e.code,
+        );
+      await db.query("rollback to savepoint dup");
+      expect(dup).toBe("23505");
+    }));
+
+  describe("revision_on", () => {
+    it("picks the tariff revision in force on the entry date", () =>
+      scenario(async () => {
+        const [older, newer] = [randomUUID(), randomUUID()];
+        await db.query(
+          `insert into tariff_revisions (id, market, label, effective_from) values
+           ($1, 'US', $3, '2090-01-01'), ($2, 'US', $4, '2090-07-01')`,
+          [older, newer, `q-${older}`, `q-${newer}`],
+        );
+        await as(user.viewer, async () => {
+          const on = async (day: string) =>
+            (await db.query("select revision_on('US', $1) as id", [day]))
+              .rows[0].id;
+          expect(await on("2090-03-01")).toBe(older);
+          expect(await on("2090-07-01")).toBe(newer);
+          expect(await on("2091-01-01")).toBe(newer);
+        });
+        const none = await db.query(
+          "select revision_on('US', '1900-01-01') as id",
+        );
+        expect(none.rows[0].id).toBeNull();
       }));
   });
 });

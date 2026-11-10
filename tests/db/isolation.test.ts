@@ -54,6 +54,8 @@ const QUOTE_COLS =
 const QUOTE_VALUES = "'Q', 'CN', 'express', '2026-10-01', 'USD', 1, 'ok', '{}'";
 const LINE_COLS = "quantity, unit_value, code_used, title, position, breakdown";
 const LINE_VALUES = "1, 1, '6109100012', 'Tee', 1, '{}'";
+// A second position: each quote holds one line per position.
+const LINE_VALUES_2 = "1, 1, '6109100012', 'Tee', 2, '{}'";
 
 // One insert per tenant table. `ids` holds the row's own id and its parents' ids.
 type Insert = (w: string, ids: Ids, actor: string) => [string, unknown[]];
@@ -185,8 +187,8 @@ const CATALOG = ["owner", "admin", "member"];
 // functions (memberships via invitations, audit rows) or the service role (jobs, webhooks).
 const MAY_INSERT: Record<string, string[]> = {
   products: CATALOG,
-  quotes: CATALOG,
-  quote_lines: CATALOG,
+  quotes: [], // save_quote only (CD-051): a saved quote is a record nobody edits
+  quote_lines: [],
   classifications: [], // agent jobs and the confirm/override function (CD-032, CD-041)
   agent_questions: [], // agent jobs and the answer function (CD-034)
   alerts: [], // change-monitor jobs (CD-061)
@@ -579,11 +581,11 @@ suite("tenant isolation (live database)", () => {
         [ws.A, id.A.product, id.B.run],
       ],
       quote_lines_workspace_id_quote_id_fkey: () => [
-        `insert into quote_lines (quote_id, workspace_id, ${LINE_COLS}) values ($1, $2, ${LINE_VALUES})`,
+        `insert into quote_lines (quote_id, workspace_id, ${LINE_COLS}) values ($1, $2, ${LINE_VALUES_2})`,
         [id.B.quote, ws.A],
       ],
       quote_lines_workspace_id_product_id_fkey: () => [
-        `insert into quote_lines (quote_id, workspace_id, product_id, ${LINE_COLS}) values ($1, $2, $3, ${LINE_VALUES})`,
+        `insert into quote_lines (quote_id, workspace_id, product_id, ${LINE_COLS}) values ($1, $2, $3, ${LINE_VALUES_2})`,
         [id.A.quote, ws.A, id.B.product],
       ],
       alert_items_workspace_id_alert_id_fkey: () => [
@@ -652,10 +654,11 @@ suite("tenant isolation (live database)", () => {
     });
 
     it("rejects re-pointing an existing row at the other workspace", async () => {
+      // On a table members can still update directly (quote rows are written by save_quote).
       const code = await errorCode(
         user.ownerA,
-        `update quote_lines set product_id = $1 where id = $2`,
-        [id.B.product, id.A.quoteLine],
+        `update products set integration_id = $1 where id = $2`,
+        [id.B.integration, id.A.product],
       );
       expect(code).toBe("23503");
     });
