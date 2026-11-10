@@ -82,13 +82,19 @@ describe("quoteInputSchema", () => {
 });
 
 describe("saveQuoteSchema", () => {
-  it("needs a name", () => {
-    expect(saveQuoteSchema.safeParse({ name: " ", input: base }).success).toBe(
-      false,
-    );
-    expect(
-      saveQuoteSchema.safeParse({ name: "November order", input: base })
-        .success,
-    ).toBe(true);
+  const save = { name: "November order", shownTotal: "523.49", input: base };
+
+  it("needs a name and the total that was shown", () => {
+    expect(saveQuoteSchema.safeParse(save).success).toBe(true);
+    for (const patch of [
+      { name: " " },
+      { shownTotal: "" },
+      { shownTotal: "523.5" },
+      { shownTotal: "$523.49" },
+      { shownTotal: undefined },
+    ])
+      expect(saveQuoteSchema.safeParse({ ...save, ...patch }).success).toBe(
+        false,
+      );
   });
 });

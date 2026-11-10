@@ -19,6 +19,7 @@ test.describe("landed cost", () => {
     request,
   }, testInfo) => {
     const sku = `LC-${testInfo.project.name}-${Date.now()}`;
+    const suggestedSku = `LCS-${testInfo.project.name}-${Date.now()}`;
     await page.goto("/app");
     await signInFromSignInPage(
       page,
@@ -38,30 +39,44 @@ test.describe("landed cost", () => {
       name: "one.csv",
       mimeType: "text/csv",
       buffer: Buffer.from(
-        `sku,title,origin_country,customs_value,currency\n${sku},Crew T-shirt,CN,4.20,USD\n`,
+        `sku,title,origin_country,customs_value,currency\n${sku},Crew T-shirt,CN,4.20,USD\n${suggestedSku},Printed tee,CN,5.00,USD\n`,
       ),
     });
     await page.getByRole("button", { name: "Continue" }).click();
     await page.getByRole("button", { name: "Check rows" }).click();
-    await page.getByRole("button", { name: "Import 1 product" }).click();
+    await page.getByRole("button", { name: "Import 2 products" }).click();
     await expect(page.getByText("Import finished.")).toBeVisible();
 
     await seedTariff();
-    await withLocalDb((db) =>
-      db.query(
+    await withLocalDb(async (db) => {
+      await db.query(
         `insert into public.classifications
            (workspace_id, product_id, code, status, confirmed_at)
          select workspace_id, id, '6109100012', 'confirmed', now()
          from public.products where sku = $1`,
         [sku],
-      ),
-    );
+      );
+      await db.query(
+        `insert into public.classifications (workspace_id, product_id, code, status, confidence)
+         select workspace_id, id, '6109100040', 'suggested', 0.9
+         from public.products where sku = $1`,
+        [suggestedSku],
+      );
+    });
 
     await page.goto("/app/landed-cost");
     await expect(page.getByText("No quotes yet.")).toBeVisible();
-    await page.getByLabel("Find products").fill(sku);
-    await page.getByRole("button", { name: "Search" }).click();
-    await page.getByRole("button", { name: "Add Crew T-shirt" }).click();
+    // The search runs in the browser once the page has hydrated; retry until it answers.
+    const add = page.getByRole("button", { name: "Add Crew T-shirt" });
+    await expect(async () => {
+      await page.getByLabel("Find products").fill(sku);
+      await page.getByRole("button", { name: "Search" }).click();
+      await expect(add).toBeVisible({ timeout: 2000 });
+    }).toPass();
+    await expect(
+      page.getByRole("list", { name: "Search results" }),
+    ).toContainText("Confirmed");
+    await add.click();
     // Origin and value come from the product.
     await expect(page.getByLabel("Country of origin")).toHaveValue("CN");
     await expect(
@@ -80,6 +95,27 @@ test.describe("landed cost", () => {
     await expect(
       page.getByText("Shipment fees (informal entry)"),
     ).toBeVisible();
+
+    // An exchange rate is only ever typed: changing the currency clears it.
+    await page.getByLabel("Currency of the values").selectOption("EUR");
+    await expect(page.getByLabel("US dollars for 1 EUR")).toHaveValue("");
+    await page.getByLabel("US dollars for 1 EUR").fill("1.1");
+    await page.getByLabel("Currency of the values").selectOption("GBP");
+    await expect(page.getByLabel("US dollars for 1 GBP")).toHaveValue("");
+    await page.getByLabel("Currency of the values").selectOption("USD");
+
+    // A product whose code is only suggested says so, in the search and in the breakdown.
+    await page.getByLabel("Find products").fill(suggestedSku);
+    await page.getByRole("button", { name: "Search" }).click();
+    await expect(
+      page.getByRole("list", { name: "Search results" }),
+    ).toContainText("Suggested, not confirmed");
+    await page.getByRole("button", { name: "Add Printed tee" }).click();
+    await page.getByRole("button", { name: "Calculate" }).click();
+    const suggested = page.getByRole("article", { name: "Printed tee" });
+    await expect(suggested).toContainText("Suggested code");
+    await expect(suggested).toContainText("Uses a suggested code");
+    await page.getByRole("button", { name: "Remove Printed tee" }).click();
 
     // Changing an input marks the figures stale; a formal entry with no MPF row needs review.
     await page.getByLabel("Quantity of Crew T-shirt").fill("1000");
@@ -117,6 +153,9 @@ test.describe("landed cost", () => {
     expect(pdf.status()).toBe(200);
     expect(pdf.headers()["content-type"]).toBe("application/pdf");
     expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
+    // Without the session there is no PDF.
+    const anonymous = await request.get(href!);
+    expect(anonymous.headers()["content-type"] ?? "").not.toContain("pdf");
 
     await page.getByRole("link", { name: "← Landed cost" }).click();
     await expect(

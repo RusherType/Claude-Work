@@ -117,14 +117,21 @@ export async function saveQuote(
 ): Promise<CalcState> {
   const parsed = saveQuoteSchema.safeParse({
     name: form.get("name"),
+    shownTotal: form.get("shownTotal"),
     input: readPayload(form),
   });
-  if (!parsed.success)
+  if (!parsed.success) {
+    const errors = fieldErrors(parsed.error, "input");
+    // The total travels in a hidden field: if only that is wrong, there is nothing to highlight.
+    const hiddenOnly = Object.keys(errors).every((k) => k === "shownTotal");
     return {
       status: "error",
-      message: "Fix the highlighted fields.",
-      errors: fieldErrors(parsed.error, "input"),
+      message: hiddenOnly
+        ? "Calculate again, then save."
+        : "Fix the highlighted fields.",
+      errors,
     };
+  }
   const s = await session();
   if (!s)
     return {
@@ -146,6 +153,14 @@ export async function saveQuote(
   );
   if (!quote.ok) return { status: "error", message: quote.message };
   const { input, result } = quote;
+  // The data can change between Calculate and Save (a measure published, a code confirmed).
+  // Never save figures the person has not seen.
+  if (parsed.data.shownTotal !== result.totals.landedCost)
+    return {
+      status: "error",
+      message:
+        "The tariff data or a product's code changed since you calculated, so the figures are different now. Calculate again, then save.",
+    };
   const { data: id, error } = await s.supabase.rpc("save_quote", {
     p_workspace: s.ctx.workspace.id,
     p_quote: {

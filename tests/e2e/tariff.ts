@@ -8,6 +8,7 @@ export const REVISION = "00000000-0000-4000-8000-0000000e2e01";
 const MEASURE = "00000000-0000-4000-8000-0000000e2e11";
 const LIMIT = "00000000-0000-4000-8000-0000000e2e21";
 const MPF = "00000000-0000-4000-8000-0000000e2e22";
+const COLUMN2 = "00000000-0000-4000-8000-0000000e2e31";
 
 export async function seedTariff() {
   await withLocalDb(async (db) => {
@@ -59,6 +60,15 @@ export async function seedTariff() {
                'https://www.cbp.gov/trade/basic-import-export', true, 'e2e')
        on conflict (id) do nothing`,
       [LIMIT, MPF],
+    );
+    // The Column 2 country list (reserved symbol C2); without it every quote needs review.
+    await db.query(
+      `insert into public.special_programs (id, market, symbol, name, countries, mpf_exempt,
+         effective_from, source_url, published, notes)
+       values ($1, 'US', 'C2', 'Column 2 countries', '{CU,KP}', false, '2026-01-02',
+               'https://hts.usitc.gov/', true, 'e2e')
+       on conflict (id) do nothing`,
+      [COLUMN2],
     );
   });
 }

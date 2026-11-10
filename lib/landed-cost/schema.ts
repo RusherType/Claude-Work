@@ -65,5 +65,7 @@ export type QuoteInput = z.infer<typeof quoteInputSchema>;
 
 export const saveQuoteSchema = z.object({
   name: text(120),
+  /** The landed-cost total the person was shown; saving is refused if it no longer holds. */
+  shownTotal: z.string().regex(/^\d{1,30}\.\d{2}$/),
   input: quoteInputSchema,
 });

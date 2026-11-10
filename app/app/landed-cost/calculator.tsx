@@ -21,6 +21,7 @@ type CalcLine = {
   code: string;
   confirmed: boolean;
   storedCurrency: string | null;
+  storedOrigin: string | null;
   quantity: string;
   unitValue: string;
 };
@@ -76,16 +77,22 @@ export function Calculator({
     (saved.status === "error" ? saved.errors : undefined) ??
     {};
   const priced = calc.status === "priced" ? calc.quote : null;
-  const fresh = priced !== null && pricedPayload === payload;
+  // While a calculation runs the previous result is still in hand: it is not the answer to what
+  // is on screen now, so it is neither shown as current nor saveable.
+  const fresh = priced !== null && !pricing && pricedPayload === payload;
+  const stale = priced !== null && !pricing && pricedPayload !== payload;
+
+  /** A rate is only ever typed by the person: changing the currency clears it (USD is 1). */
+  function changeCurrency(next: string) {
+    setCurrency(next);
+    setFxRate(next === "USD" ? "1" : "");
+  }
 
   function add(hit: ProductHit) {
     if (!hit.code || lines.some((l) => l.productId === hit.id)) return;
     if (lines.length === 0) {
       if (hit.origin) setOrigin(hit.origin);
-      if (hit.currency && hit.customsValue) {
-        setCurrency(hit.currency);
-        if (hit.currency === "USD") setFxRate("1");
-      }
+      if (hit.currency && hit.customsValue) changeCurrency(hit.currency);
     }
     const quoteCurrency =
       lines.length === 0 && hit.customsValue ? hit.currency : currency;
@@ -99,6 +106,7 @@ export function Calculator({
         confirmed:
           hit.status === "confirmed" || hit.status === "broker_verified",
         storedCurrency: hit.currency,
+        storedOrigin: hit.origin,
         quantity: "1",
         // The stored value only fills in when it is in the quote's currency.
         unitValue:
@@ -146,10 +154,19 @@ export function Calculator({
             {searching ? "Searching…" : "Search"}
           </button>
         </form>
+        <p role="status" className="sr-only">
+          {hits === null || searching
+            ? ""
+            : hits.length === 0
+              ? "No products match."
+              : `${hits.length} ${hits.length === 1 ? "product" : "products"} found.`}
+        </p>
         {hits && (
           <ul aria-label="Search results" className="flex flex-col gap-1">
             {hits.length === 0 && (
-              <li className="text-muted text-sm">No products match.</li>
+              <li className="text-muted text-sm" aria-hidden="true">
+                No products match.
+              </li>
             )}
             {hits.map((h) => {
               const added = lines.some((l) => l.productId === h.id);
@@ -163,6 +180,14 @@ export function Calculator({
                     <span className="text-muted font-mono text-xs">
                       {h.sku ?? ""} {h.code ? formatHtsCode(h.code) : ""}
                     </span>
+                    {h.code && (
+                      <span className="text-muted text-xs">
+                        {h.status === "confirmed" ||
+                        h.status === "broker_verified"
+                          ? " · Confirmed"
+                          : " · Suggested, not confirmed"}
+                      </span>
+                    )}
                   </span>
                   {h.code ? (
                     <button
@@ -238,6 +263,13 @@ export function Calculator({
                     Remove
                   </button>
                 </div>
+                {l.storedOrigin && origin && l.storedOrigin !== origin && (
+                  <p className="text-muted text-xs">
+                    Its catalog origin is {l.storedOrigin}, but this quote
+                    prices every product as made in {origin}. Quote it
+                    separately if it ships from elsewhere.
+                  </p>
+                )}
                 {l.storedCurrency && l.storedCurrency !== currency && (
                   <p className="text-muted text-xs">
                     Its catalog value is in {l.storedCurrency}; enter it in{" "}
@@ -296,17 +328,13 @@ export function Calculator({
             value={entryDate}
             onChange={setEntryDate}
             error={errors.entryDate}
-            help="Rates in force on this date are used."
+            help="Rates in force on this date are used. It starts as today's date in UTC."
           />
           <Select
             id="currency"
             label="Currency of the values"
             value={currency}
-            onChange={(v) => {
-              setCurrency(v);
-              if (v === "USD") setFxRate("1");
-              else if (currency === "USD") setFxRate("");
-            }}
+            onChange={changeCurrency}
             error={errors.currency}
             options={CURRENCY_CODES.map((c) => ({ value: c, label: c }))}
           />
@@ -346,7 +374,14 @@ export function Calculator({
         </div>
       </form>
 
-      {priced && !fresh && (
+      <p role="status" className="sr-only">
+        {fresh
+          ? priced.result.status === "needs_review"
+            ? `Calculated, but it needs review. Landed cost ${priced.result.totals.landedCost} US dollars.`
+            : `Calculated. Landed cost ${priced.result.totals.landedCost} US dollars.`
+          : ""}
+      </p>
+      {stale && (
         <p className="text-review text-sm" role="status">
           You changed the quote since it was calculated. Calculate again to see
           the new figures.
@@ -373,6 +408,11 @@ export function Calculator({
               aria-label="Save quote"
             >
               <input type="hidden" name="payload" value={payload} />
+              <input
+                type="hidden"
+                name="shownTotal"
+                value={priced.result.totals.landedCost}
+              />
               <Text
                 id="name"
                 label="Quote name"
@@ -381,7 +421,11 @@ export function Calculator({
                 error={errors.name}
                 help="For example, the order or supplier."
               />
-              <button type="submit" disabled={saving} className={primary}>
+              <button
+                type="submit"
+                disabled={saving || pricing}
+                className={primary}
+              >
                 {saving ? "Saving…" : "Save quote"}
               </button>
               {saved.status === "error" && (
