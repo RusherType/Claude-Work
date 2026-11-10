@@ -47,7 +47,11 @@ function chooseRate(
     program: null,
   };
 
-  if (shipment.column2Countries.includes(line.origin)) {
+  if (shipment.column2ListMissing) {
+    review.refuse(
+      `The list of Column 2 countries is not on file for this date, so we can't tell whether origin ${line.origin} pays Column 2 rates. Priced at the General rate.`,
+    );
+  } else if (shipment.column2Countries.includes(line.origin)) {
     if (!line.column2Rate || line.column2Rate.type === "none") {
       review.refuse(
         `Origin ${line.origin} pays the Column 2 rate, but this line has no Column 2 rate.`,

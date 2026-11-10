@@ -1659,6 +1659,13 @@ export type Database = {
         Args: { p_market: Database["public"]["Enums"]["market_code"] };
         Returns: string;
       };
+      revision_on: {
+        Args: {
+          p_date: string;
+          p_market: Database["public"]["Enums"]["market_code"];
+        };
+        Returns: string;
+      };
       revoke_invitation: { Args: { p_invitation: string }; Returns: undefined };
       save_quote: {
         Args: { p_lines: Json; p_quote: Json; p_workspace: string };

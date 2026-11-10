@@ -71,7 +71,8 @@ export async function computeQuote(
         .select("id, code, status")
         .eq("workspace_id", workspaceId)
         .in("id", ids),
-      supabase.rpc("revision_in_force", { p_market: "US" }),
+      // Base rates from the revision in force on the entry date, like everything else.
+      supabase.rpc("revision_on", { p_market: "US", p_date: day }),
       supabase
         .from("tariff_measures")
         .select(MEASURE_COLUMNS)
@@ -143,7 +144,7 @@ export async function computeQuote(
     tariffLines = lines.data;
   } else {
     notices.push(
-      "No US tariff schedule is loaded yet, so duty rates are missing and every line needs review.",
+      `No US tariff schedule on file covers ${day}, so duty rates are missing and every line needs review.`,
     );
   }
   const lineByCode = new Map(tariffLines.map((l) => [l.code, l]));
@@ -151,6 +152,11 @@ export async function computeQuote(
     programs.data!,
     day,
   );
+
+  if (column2Countries === null)
+    notices.push(
+      `The list of Column 2 countries is not published for ${day}, so this quote needs review: goods from those countries pay much higher rates.`,
+    );
 
   let result: LandedCostResult;
   try {
@@ -170,7 +176,8 @@ export async function computeQuote(
         currency: input.currency,
         fxRateToUsd: input.fxRateToUsd,
         ...(input.carrier ? { carrier: input.carrier } : {}),
-        column2Countries,
+        column2Countries: column2Countries ?? [],
+        ...(column2Countries === null ? { column2ListMissing: true } : {}),
       },
       measures: measures.data!.map(toMeasure),
       fees: fees.data!.map(toFee),

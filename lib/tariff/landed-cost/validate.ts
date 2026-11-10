@@ -59,6 +59,11 @@ export function validateInput(input: LandedCostInput): {
     fail("exchange rate (USD must use 1)", shipment.fxRateToUsd);
   }
   stringArray(shipment.column2Countries, "Column 2 country list", COUNTRY);
+  if (
+    shipment.column2ListMissing !== undefined &&
+    typeof shipment.column2ListMissing !== "boolean"
+  )
+    fail("Column 2 list flag", shipment.column2ListMissing);
 
   if (!Array.isArray(input.lines) || input.lines.length === 0) {
     fail("lines (none given)", input.lines);

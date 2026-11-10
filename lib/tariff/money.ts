@@ -59,6 +59,24 @@ export function formatUsd(d: Decimal): string {
   return `$${int.replace(/\B(?=(\d{3})+(?!\d))/g, ",")}.${frac}`;
 }
 
+/** What a line is worth: value per item times the item count, to the cent ("4.20" × 100 = "420.00"). */
+export function lineValue(unitValue: string, quantity: number): string {
+  return usd(dec(unitValue, "unit value").times(wholeItems(quantity)));
+}
+
+/** A line's quantity in a unit: the amount per item times the item count ("0.180" kg × 3 = "0.54"). */
+export function lineQuantity(perItem: string, quantity: number): string {
+  return dec(perItem, "quantity per item")
+    .times(wholeItems(quantity))
+    .toString();
+}
+
+function wholeItems(quantity: number): number {
+  if (!Number.isInteger(quantity) || quantity < 1)
+    throw new Error(`Invalid item count: ${JSON.stringify(quantity)}`);
+  return quantity;
+}
+
 export function sum(values: Decimal[]): Decimal {
   return values.reduce((a, b) => a.plus(b), new Decimal(0));
 }

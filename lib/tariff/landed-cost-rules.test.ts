@@ -498,3 +498,38 @@ describe("invalid input throws", () => {
     );
   });
 });
+
+describe("when the Column 2 country list is not on file", () => {
+  const shipment = {
+    mode: "express" as const,
+    entryDate: "2026-06-15",
+    currency: "USD",
+    fxRateToUsd: "1",
+    column2Countries: [],
+    column2ListMissing: true,
+  };
+
+  it("prices at the General rate but sends every line to review", () => {
+    const r = run({ shipment, lines: [line({ origin: "RU" })] });
+    expect(r.status).toBe("needs_review");
+    expect(r.lines[0].status).toBe("needs_review");
+    expect(amountOf(r, "duty_general")).toEqual(["53.00"]);
+    expect(r.lines[0].warnings.join(" ")).toMatch(
+      /Column 2 countries is not on file.*origin RU/,
+    );
+  });
+
+  it("is not triggered by an empty list that is on file", () => {
+    const r = run({
+      shipment: { ...shipment, column2ListMissing: false },
+      lines: [line({ origin: "RU" })],
+    });
+    expect(r.status).toBe("ok");
+  });
+
+  it("rejects a flag that is not true or false", () => {
+    expect(() =>
+      run({ shipment: { ...shipment, column2ListMissing: "yes" as never } }),
+    ).toThrow(/Column 2 list flag/);
+  });
+});

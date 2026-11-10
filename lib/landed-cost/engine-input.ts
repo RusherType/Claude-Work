@@ -1,6 +1,7 @@
 /**
  * CD-051: database rows (numerics read as text) turned into landed-cost engine input. Pure, so
- * the mapping is unit-tested; lib/landed-cost/load.ts does the reading.
+ * the mapping is unit-tested; lib/landed-cost/quote.ts does the reading. No arithmetic here: line
+ * value and weight come from lib/tariff/money.
  */
 import type {
   CostLine,
@@ -10,7 +11,7 @@ import type {
   Mode,
   Program,
 } from "@/lib/tariff/landed-cost/types";
-import { Decimal } from "@/lib/tariff/money";
+import { lineQuantity, lineValue } from "@/lib/tariff/money";
 import { parseRate, parseSpecialRates } from "@/lib/tariff/rate";
 
 /**
@@ -102,20 +103,26 @@ export function toFee(r: FeeRow): Fee {
   };
 }
 
-/** Program rows for the engine, and the Column 2 countries in force on the entry date. */
+/**
+ * Program rows for the engine, and the Column 2 countries in force on the entry date: `null`
+ * when no Column 2 row is in force, so the engine sends the quote to review.
+ */
 export function toPrograms(
   rows: ProgramRow[],
   entryDate: string,
-): { programs: Program[]; column2Countries: string[] } {
+): { programs: Program[]; column2Countries: string[] | null } {
   const inForce = (r: ProgramRow) =>
     r.effective_from <= entryDate &&
     (r.effective_to === null || entryDate <= r.effective_to);
-  const column2 = new Set<string>();
+  let column2: Set<string> | null = null;
   const programs: Program[] = [];
   for (const r of rows) {
     const countries = r.countries.map((c) => c.trim());
     if (r.symbol === COLUMN2_SYMBOL) {
-      if (inForce(r)) countries.forEach((c) => column2.add(c));
+      if (inForce(r)) {
+        column2 ??= new Set();
+        for (const c of countries) column2.add(c);
+      }
       continue;
     }
     programs.push({
@@ -127,7 +134,7 @@ export function toPrograms(
       sourceUrl: r.source_url,
     });
   }
-  return { programs, column2Countries: [...column2].sort() };
+  return { programs, column2Countries: column2 && [...column2].sort() };
 }
 
 export type QuoteProduct = {
@@ -155,14 +162,10 @@ export function toCostLine(
     id: product.id,
     code: product.code,
     origin,
-    value: new Decimal(unitValue).times(quantity).toFixed(2),
+    value: lineValue(unitValue, quantity),
     quantity,
     ...(product.weightKg
-      ? {
-          quantities: {
-            kg: new Decimal(product.weightKg).times(quantity).toString(),
-          },
-        }
+      ? { quantities: { kg: lineQuantity(product.weightKg, quantity) } }
       : {}),
     generalRate: parseRate(tariffLine?.general_rate_raw),
     specialRates: parseSpecialRates(tariffLine?.special_rate_raw) ?? [],

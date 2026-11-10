@@ -95,6 +95,11 @@ export type Shipment = {
   fxRateToUsd: string;
   carrier?: string;
   column2Countries: string[];
+  /**
+   * Set when no Column 2 country list is on file for the entry date: every line is then priced
+   * at the General rate and sent to review, never quietly under-quoted.
+   */
+  column2ListMissing?: boolean;
 };
 
 export type LandedCostInput = {

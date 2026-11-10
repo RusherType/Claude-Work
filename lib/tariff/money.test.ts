@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { allocate, dec, Decimal, formatUsd, isoDate, usd } from "./money";
+import {
+  allocate,
+  dec,
+  Decimal,
+  formatUsd,
+  isoDate,
+  lineQuantity,
+  lineValue,
+  usd,
+} from "./money";
 
 const d = (s: string) => new Decimal(s);
 
@@ -77,5 +86,25 @@ describe("allocate", () => {
   it("handles no lines and a zero total", () => {
     expect(split("1.00", [])).toEqual([]);
     expect(split("0.00", ["1", "2"])).toEqual(["0.00", "0.00"]);
+  });
+});
+
+describe("lineValue and lineQuantity", () => {
+  it("multiply exactly by the item count", () => {
+    expect(lineValue("4.20", 100)).toBe("420.00");
+    expect(lineValue("0.10", 3)).toBe("0.30");
+    expect(lineValue("19.99", 1_000_000)).toBe("19990000.00");
+    expect(lineQuantity("0.180", 3)).toBe("0.54");
+    expect(lineQuantity("0.1", 3)).toBe("0.3");
+  });
+
+  it.each([0, -1, 1.5, Number.NaN])("refuse an item count of %s", (n) => {
+    expect(() => lineValue("1", n)).toThrow(/item count/);
+    expect(() => lineQuantity("1", n)).toThrow(/item count/);
+  });
+
+  it("refuse values that are not plain decimals", () => {
+    expect(() => lineValue("1e3", 1)).toThrow(/unit value/);
+    expect(() => lineQuantity("abc", 1)).toThrow(/quantity per item/);
   });
 });

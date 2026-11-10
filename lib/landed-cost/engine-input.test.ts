@@ -104,6 +104,25 @@ describe("toPrograms", () => {
   });
 });
 
+describe("toPrograms without a Column 2 row in force", () => {
+  it("reports the list as missing rather than empty", () => {
+    expect(toPrograms([program({ symbol: "AU" })], "2026-11-01")).toEqual({
+      programs: [expect.objectContaining({ symbol: "AU" })],
+      column2Countries: null,
+    });
+    // A row that has ended, or not started, is not in force.
+    const ended = program({
+      symbol: COLUMN2_SYMBOL,
+      countries: ["CU"],
+      effective_to: "2026-06-30",
+    });
+    expect(toPrograms([ended], "2026-11-01").column2Countries).toBeNull();
+    // An empty list cannot be stored (the table needs at least one country), so a row in force
+    // always names countries.
+    expect(toPrograms([ended], "2026-06-30").column2Countries).toEqual(["CU"]);
+  });
+});
+
 describe("toCostLine", () => {
   const tee = { id: "p1", code: "6109100012", weightKg: "0.180" };
   const line = {
