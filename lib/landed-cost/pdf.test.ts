@@ -1,6 +1,12 @@
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { pdfText, quotePdf } from "./pdf";
+import {
+  MAX_PDF_ROWS,
+  pdfRows,
+  pdfText,
+  QuoteTooLongError,
+  quotePdf,
+} from "./pdf";
 import type { SavedQuote } from "./saved";
 
 const line = (title: string) => ({
@@ -89,27 +95,50 @@ describe("quotePdf", () => {
   });
 });
 
-describe("a quote stuffed to every limit", () => {
-  it("still prints quickly", async () => {
-    const long = "W".repeat(500);
-    const stuffed = quote(Array.from({ length: 100 }, (_, i) => `${long}${i}`));
+describe("limits on what one PDF can cost", () => {
+  const long = "i".repeat(500); // narrow glyphs: the most characters per line
+  const stuff = (lines: number, perLine: number) => {
+    const stuffed = quote(
+      Array.from({ length: lines }, (_, i) => `${long}${i}`),
+    );
     for (const l of stuffed.lines) {
       l.result = {
         ...l.result,
-        components: Array.from({ length: 50 }, () => ({
+        components: Array.from({ length: perLine }, () => ({
           kind: "overlay" as const,
           label: long,
           basis: long,
           amount: "1.00",
         })),
-        warnings: Array.from({ length: 50 }, () => long),
+        warnings: Array.from({ length: perLine }, () => long),
       };
     }
+    return stuffed;
+  };
+
+  it("counts the rows it prints", () => {
+    // 5 header rows, 5 + 1 component per line, 8 footer rows + 1 shipment fee.
+    expect(pdfRows(quote(["One"]))).toBe(5 + 6 + 9);
+    expect(pdfRows(stuff(100, 50))).toBeGreaterThan(MAX_PDF_ROWS);
+  });
+
+  it("refuses a quote that is too long, printing nothing partial", async () => {
+    await expect(quotePdf(stuff(100, 50), long)).rejects.toBeInstanceOf(
+      QuoteTooLongError,
+    );
+  });
+
+  it("prints the longest quote it accepts quickly, down to the totals and the disclaimer", async () => {
+    // 100 lines of 5 + 4 + 4 rows, with every string at its stored maximum.
+    const biggest = stuff(100, 4);
+    expect(pdfRows(biggest)).toBeLessThanOrEqual(MAX_PDF_ROWS);
     const started = performance.now();
-    const bytes = await quotePdf(stuffed, long);
+    const bytes = await quotePdf(biggest, long);
     const seconds = (performance.now() - started) / 1000;
-    expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe("%PDF-");
     // Was about 5 minutes before the line cut was bounded (security audit H1).
     expect(seconds).toBeLessThan(5);
+    const doc = await PDFDocument.load(bytes);
+    // Every page ends inside the page: nothing is drawn below the bottom margin.
+    expect(doc.getPageCount()).toBeGreaterThan(10);
   }, 20_000);
 });

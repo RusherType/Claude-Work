@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { loadSavedQuote } from "@/lib/landed-cost/saved";
-import { quotePdf } from "@/lib/landed-cost/pdf";
+import { QuoteTooLongError, quotePdf } from "@/lib/landed-cost/pdf";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceContext } from "@/lib/workspace";
 
@@ -25,7 +25,14 @@ export async function GET(
   if (quote === "unreadable")
     return new Response("This quote can't be shown", { status: 422 });
 
-  const pdf = await quotePdf(quote, session.workspace.name);
+  let pdf: Uint8Array;
+  try {
+    pdf = await quotePdf(quote, session.workspace.name);
+  } catch (e) {
+    if (e instanceof QuoteTooLongError)
+      return new Response(e.message, { status: 422 });
+    throw e;
+  }
   const file = `quote-${quote.entryDate}-${id.slice(0, 8)}.pdf`;
   return new Response(pdf as BodyInit, {
     headers: {

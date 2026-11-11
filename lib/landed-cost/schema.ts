@@ -10,6 +10,8 @@ import { MODES, type Mode } from "@/lib/tariff/landed-cost/types";
 import { Decimal } from "@/lib/tariff/money";
 
 export const MAX_QUOTE_LINES = 50;
+export const MIN_ENTRY_DATE = "2000-01-01";
+export const MAX_ENTRY_DATE = "2100-12-31";
 
 /** numeric(12,2): what one unit is worth, in the quote currency. */
 const unitValue = z
@@ -42,7 +44,13 @@ export const quoteInputSchema = z
       .max(MAX_QUOTE_LINES, `At most ${MAX_QUOTE_LINES} products per quote.`),
     origin: z.string().refine(isCountryCode, "Choose a country of origin."),
     mode: z.enum(MODES as [Mode, ...Mode[]], "Choose how it ships."),
-    entryDate: z.iso.date("Use a date like 2026-11-01."),
+    // The same range as the quotes table's check (ISO dates compare correctly as strings).
+    entryDate: z.iso
+      .date("Use a date like 2026-11-01.")
+      .refine(
+        (d) => d >= MIN_ENTRY_DATE && d <= MAX_ENTRY_DATE,
+        "Use a date between 2000 and 2100.",
+      ),
     currency: z.string().refine(isCurrencyCode, "Choose a currency."),
     fxRateToUsd: fxRate,
     carrier: z.preprocess(
@@ -65,7 +73,7 @@ export type QuoteInput = z.infer<typeof quoteInputSchema>;
 
 export const saveQuoteSchema = z.object({
   name: text(120),
-  /** The landed-cost total the person was shown; saving is refused if it no longer holds. */
-  shownTotal: z.string().regex(/^\d{1,30}\.\d{2}$/),
+  /** A digest of the figures the person was shown; saving is refused if they no longer hold. */
+  shown: z.string().min(1).max(20_000),
   input: quoteInputSchema,
 });

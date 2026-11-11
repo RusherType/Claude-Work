@@ -4,6 +4,7 @@ import { useActionState, useState, useTransition } from "react";
 import { CURRENCY_CODES } from "@/lib/catalog/currencies";
 import { formatHtsCode } from "@/lib/catalog/listing";
 import { MAX_QUOTE_LINES } from "@/lib/landed-cost/schema";
+import { figuresDigest } from "@/lib/landed-cost/stored";
 import { field, primary, secondary } from "@/lib/ui/styles";
 import {
   calculateQuote,
@@ -51,12 +52,13 @@ export function Calculator({
   const [currency, setCurrency] = useState("USD");
   const [fxRate, setFxRate] = useState("1");
   const [carrier, setCarrier] = useState("");
+  // Kept here, so the name survives a recalculation (the save form itself is replaced).
   const [name, setName] = useState("");
   const [query, setQuery] = useState("");
   const [hits, setHits] = useState<ProductHit[] | null>(null);
+  const [searchError, setSearchError] = useState<string | null>(null);
   const [searching, startSearch] = useTransition();
   const [calc, calculate, pricing] = useActionState(calculateQuote, idle);
-  const [saved, save, saving] = useActionState(saveQuote, idle);
   const [pricedPayload, setPricedPayload] = useState<string | null>(null);
 
   const payload = JSON.stringify({
@@ -72,10 +74,7 @@ export function Calculator({
     fxRateToUsd: currency === "USD" ? "1" : fxRate,
     carrier,
   });
-  const errors =
-    (calc.status === "error" ? calc.errors : undefined) ??
-    (saved.status === "error" ? saved.errors : undefined) ??
-    {};
+  const errors = (calc.status === "error" ? calc.errors : undefined) ?? {};
   const priced = calc.status === "priced" ? calc.quote : null;
   // While a calculation runs the previous result is still in hand: it is not the answer to what
   // is on screen now, so it is neither shown as current nor saveable.
@@ -84,6 +83,7 @@ export function Calculator({
 
   /** A rate is only ever typed by the person: changing the currency clears it (USD is 1). */
   function changeCurrency(next: string) {
+    if (next === currency) return;
     setCurrency(next);
     setFxRate(next === "USD" ? "1" : "");
   }
@@ -133,7 +133,11 @@ export function Calculator({
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            startSearch(async () => setHits(await searchProducts(query)));
+            startSearch(async () => {
+              const found = await searchProducts(query);
+              setHits(found.ok ? found.hits : null);
+              setSearchError(found.ok ? null : found.message);
+            });
           }}
         >
           <div className="flex flex-col gap-1">
@@ -161,12 +165,15 @@ export function Calculator({
               ? "No products match."
               : `${hits.length} ${hits.length === 1 ? "product" : "products"} found.`}
         </p>
+        {searchError && (
+          <p role="alert" className="text-risk text-sm">
+            {searchError}
+          </p>
+        )}
         {hits && (
           <ul aria-label="Search results" className="flex flex-col gap-1">
             {hits.length === 0 && (
-              <li className="text-muted text-sm" aria-hidden="true">
-                No products match.
-              </li>
+              <li className="text-muted text-sm">No products match.</li>
             )}
             {hits.map((h) => {
               const added = lines.some((l) => l.productId === h.id);
@@ -402,42 +409,60 @@ export function Calculator({
             }}
           />
           {canSave && (
-            <form
-              action={save}
-              className="border-border bg-surface flex flex-wrap items-end gap-3 rounded-lg border p-4"
-              aria-label="Save quote"
-            >
-              <input type="hidden" name="payload" value={payload} />
-              <input
-                type="hidden"
-                name="shownTotal"
-                value={priced.result.totals.landedCost}
-              />
-              <Text
-                id="name"
-                label="Quote name"
-                value={name}
-                onChange={setName}
-                error={errors.name}
-                help="For example, the order or supplier."
-              />
-              <button
-                type="submit"
-                disabled={saving || pricing}
-                className={primary}
-              >
-                {saving ? "Saving…" : "Save quote"}
-              </button>
-              {saved.status === "error" && (
-                <p role="alert" className="text-risk w-full text-sm">
-                  {saved.message}
-                </p>
-              )}
-            </form>
+            // Keyed on the figures: a new calculation gets a fresh form, without an old error.
+            <SaveQuoteForm
+              key={figuresDigest(priced.result, priced.lines)}
+              payload={payload}
+              shown={figuresDigest(priced.result, priced.lines)}
+              name={name}
+              onName={setName}
+            />
           )}
         </>
       )}
     </div>
+  );
+}
+
+/** Name the quote and save it. `shown` is what the person saw; the server refuses anything else. */
+function SaveQuoteForm({
+  payload,
+  shown,
+  name,
+  onName,
+}: {
+  payload: string;
+  shown: string;
+  name: string;
+  onName: (name: string) => void;
+}) {
+  const [saved, save, saving] = useActionState(saveQuote, idle);
+  const error = saved.status === "error" ? saved : null;
+  return (
+    <form
+      action={save}
+      className="border-border bg-surface flex flex-wrap items-end gap-3 rounded-lg border p-4"
+      aria-label="Save quote"
+    >
+      <input type="hidden" name="payload" value={payload} />
+      <input type="hidden" name="shown" value={shown} />
+      <Text
+        id="name"
+        label="Quote name"
+        value={name}
+        onChange={onName}
+        error={error?.errors?.name}
+        help="For example, the order or supplier."
+      />
+      <button type="submit" disabled={saving} className={primary}>
+        {saving ? "Saving…" : "Save quote"}
+      </button>
+      {error && (
+        <p role="alert" className="text-risk w-full text-sm">
+          {error.message}
+        </p>
+      )}
+    </form>
   );
 }
 

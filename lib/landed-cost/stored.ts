@@ -1,7 +1,7 @@
 /**
  * CD-051: a saved quote is a record of what was quoted, shown as stored rather than recomputed.
- * The JSON is read back through these schemas: members can also write quote rows through the Data
- * API, so nothing is rendered unless it has the expected shape, and source links are https only.
+ * The JSON is read back through these schemas: a member can call save_quote directly with any
+ * JSON, so nothing is rendered unless it has the expected shape, and source links are https only.
  */
 import { z } from "zod";
 import type {
@@ -136,4 +136,31 @@ export function relinkSources(
     const url = httpsUrl.safeParse(urls.get(`${s.table}:${s.id}`));
     return { ...c, source: { ...s, sourceUrl: url.success ? url.data : null } };
   });
+}
+
+/** More distinct measure or fee rows than any real quote points at: treat the quote as not ours. */
+export const MAX_REFERENCED_ROWS = 200;
+
+/**
+ * What a person was shown, as one string: the status, the totals, and each line's code, whether
+ * it was confirmed, its status and its landed cost. Save compares it with what the server
+ * computes at that moment, so nothing that changed in between is saved unseen.
+ */
+export function figuresDigest(
+  result: Pick<LandedCostResult, "status" | "entryType" | "totals">,
+  lines: {
+    code: string;
+    confirmed: boolean;
+    result: Pick<LineResult, "status" | "landedCost">;
+  }[],
+): string {
+  return JSON.stringify([
+    result.status,
+    result.entryType,
+    result.totals.customsValue,
+    result.totals.duties,
+    result.totals.fees,
+    result.totals.landedCost,
+    lines.map((l) => [l.code, l.confirmed, l.result.status, l.result.landedCost]),
+  ]);
 }

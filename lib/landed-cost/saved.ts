@@ -3,6 +3,7 @@ import type { createClient } from "@/lib/supabase/server";
 import type { LineResult } from "@/lib/tariff/landed-cost/types";
 import {
   lineResultSchema,
+  MAX_REFERENCED_ROWS,
   referencedRows,
   relinkSources,
   storedTotalsSchema,
@@ -90,6 +91,11 @@ export async function loadSavedQuote(
     ...totals.data.shipmentFees,
     ...savedLines.flatMap((l) => l.result.components),
   ]);
+  if (
+    rows.tariff_measures.length > MAX_REFERENCED_ROWS ||
+    rows.fee_schedules.length > MAX_REFERENCED_ROWS
+  )
+    return "unreadable";
   const urls = new Map<string, string>();
   for (const table of ["tariff_measures", "fee_schedules"] as const) {
     if (rows[table].length === 0) continue;

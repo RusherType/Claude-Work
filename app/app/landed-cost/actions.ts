@@ -6,7 +6,7 @@ import { z } from "zod";
 import { searchFilter } from "@/lib/catalog/listing";
 import { computeQuote, type ComputedQuote } from "@/lib/landed-cost/quote";
 import { quoteInputSchema, saveQuoteSchema } from "@/lib/landed-cost/schema";
-import { totalsToStore } from "@/lib/landed-cost/stored";
+import { figuresDigest, totalsToStore } from "@/lib/landed-cost/stored";
 import { createClient } from "@/lib/supabase/server";
 import { getWorkspaceContext } from "@/lib/workspace";
 
@@ -31,6 +31,17 @@ export type CalcState =
   | { status: "error"; message: string; errors?: Record<string, string> };
 
 const MAX_PAYLOAD = 64 * 1024;
+
+/** What to tell the person when save_quote refuses (0007_quotes.sql). */
+function saveFailure(error: { code?: string; message?: string } | null) {
+  if (error?.code === "42501")
+    return "You can't save quotes in this workspace.";
+  if (error?.message === "too_many_quotes")
+    return "You've saved a lot of quotes in the last hour. Try again later.";
+  if (error?.message === "quote_limit")
+    return "This workspace has reached its limit of 2,000 saved quotes. Ask an owner or admin to delete old ones.";
+  return "Couldn't save the quote because of a problem on our side. Try again.";
+}
 
 async function session() {
   const ctx = await getWorkspaceContext();
@@ -61,10 +72,16 @@ function fieldErrors(error: z.ZodError, prefix = ""): Record<string, string> {
 
 const searchSchema = z.string().max(100);
 
-export async function searchProducts(query: string): Promise<ProductHit[]> {
+export type SearchResult =
+  { ok: true; hits: ProductHit[] } | { ok: false; message: string };
+
+export async function searchProducts(query: string): Promise<SearchResult> {
   const q = searchSchema.safeParse(query);
+  if (!q.success)
+    return { ok: false, message: "Search for at most 100 characters." };
   const s = await session();
-  if (!q.success || !s) return [];
+  if (!s)
+    return { ok: false, message: "Your session has ended. Sign in again." };
   let request = s.supabase
     .from("catalog_items")
     .select(
@@ -76,17 +93,21 @@ export async function searchProducts(query: string): Promise<ProductHit[]> {
   const filter = searchFilter(q.data);
   if (filter) request = request.or(filter);
   const { data, error } = await request;
-  if (error || !data) return [];
-  return data.map((r) => ({
-    id: r.id ?? "",
-    title: r.title ?? "",
-    sku: r.sku,
-    code: r.code,
-    status: r.status,
-    customsValue: r.customs_value,
-    currency: r.currency,
-    origin: r.origin_country,
-  }));
+  if (error || !data)
+    return { ok: false, message: "Couldn't search your catalog. Try again." };
+  return {
+    ok: true,
+    hits: data.map((r) => ({
+      id: r.id ?? "",
+      title: r.title ?? "",
+      sku: r.sku,
+      code: r.code,
+      status: r.status,
+      customsValue: r.customs_value,
+      currency: r.currency,
+      origin: r.origin_country,
+    })),
+  };
 }
 
 export async function calculateQuote(
@@ -117,13 +138,13 @@ export async function saveQuote(
 ): Promise<CalcState> {
   const parsed = saveQuoteSchema.safeParse({
     name: form.get("name"),
-    shownTotal: form.get("shownTotal"),
+    shown: form.get("shown"),
     input: readPayload(form),
   });
   if (!parsed.success) {
     const errors = fieldErrors(parsed.error, "input");
     // The total travels in a hidden field: if only that is wrong, there is nothing to highlight.
-    const hiddenOnly = Object.keys(errors).every((k) => k === "shownTotal");
+    const hiddenOnly = Object.keys(errors).every((k) => k === "shown");
     return {
       status: "error",
       message: hiddenOnly
@@ -155,7 +176,7 @@ export async function saveQuote(
   const { input, result } = quote;
   // The data can change between Calculate and Save (a measure published, a code confirmed).
   // Never save figures the person has not seen.
-  if (parsed.data.shownTotal !== result.totals.landedCost)
+  if (parsed.data.shown !== figuresDigest(result, quote.lines))
     return {
       status: "error",
       message:
@@ -186,14 +207,7 @@ export async function saveQuote(
       sku: l.sku ?? "",
     })),
   });
-  if (error || !id)
-    return {
-      status: "error",
-      message:
-        error?.code === "42501"
-          ? "You can't save quotes in this workspace."
-          : "Couldn't save the quote because of a problem on our side. Try again.",
-    };
+  if (error || !id) return { status: "error", message: saveFailure(error) };
   revalidatePath("/app/landed-cost");
   redirect(`/app/landed-cost/quotes/${id}?saved=1`);
 }

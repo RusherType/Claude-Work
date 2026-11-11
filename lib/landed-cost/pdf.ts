@@ -37,12 +37,35 @@ const GREY = rgb(0.36, 0.38, 0.42);
 
 /** Bounds on the work one PDF can cost, whatever a stored quote holds. */
 const MAX_LINE_CHARS = 300;
-const MAX_ROWS = 4000;
+/** A real 50-product quote is under about 800 rows. */
+export const MAX_PDF_ROWS = 1500;
+
+/** Thrown for a quote with more rows than a PDF may hold: nothing partial is ever printed. */
+export class QuoteTooLongError extends Error {
+  constructor() {
+    super("This quote is too long to print.");
+    this.name = "QuoteTooLongError";
+  }
+}
+
+/** How many text rows the quote prints as (the layout in quotePdf, counted). */
+export function pdfRows(quote: SavedQuote): number {
+  const header = 5;
+  const lines = quote.lines.reduce(
+    (n, l) => n + 5 + l.result.components.length + l.result.warnings.length,
+    0,
+  );
+  const footer =
+    8 +
+    Math.max(1, quote.totals.shipmentFees.length) +
+    quote.totals.notices.length +
+    quote.totals.warnings.length;
+  return header + lines + footer;
+}
 
 class Writer {
   page: PDFPage;
   y: number;
-  private rows = 0;
   constructor(
     private doc: PDFDocument,
     private font: PDFFont,
@@ -72,9 +95,6 @@ class Writer {
     const font = opts.bold ? this.bold : this.font;
     const x = opts.x ?? MARGIN;
     const width = opts.width ?? PAGE[0] - MARGIN - x;
-    if (this.rows >= MAX_ROWS) return;
-    if (++this.rows === MAX_ROWS)
-      text = "(The rest of this quote is too long to print.)";
     // No line can show more than a few hundred characters: cut first, then find the longest
     // prefix that fits by bisection, so a long stored string costs a handful of measurements.
     let t = pdfText(text.slice(0, MAX_LINE_CHARS));
@@ -133,6 +153,9 @@ export async function quotePdf(
   quote: SavedQuote,
   workspaceName: string,
 ): Promise<Uint8Array> {
+  // Checked before any drawing: a quote over the limit gets no PDF, never a cut-off one that
+  // would lose its totals or its disclaimer.
+  if (pdfRows(quote) > MAX_PDF_ROWS) throw new QuoteTooLongError();
   const doc = await PDFDocument.create();
   doc.setTitle(pdfText(`Landed-cost quote: ${quote.name}`));
   doc.setProducer("ClearDuty");
