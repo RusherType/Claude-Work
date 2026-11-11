@@ -407,4 +407,145 @@ describeDb("quotes (live database)", () => {
         expect(none.rows[0].id).toBeNull();
       }));
   });
+
+  it("refuses a quote or line with missing fields", () =>
+    scenario(async () => {
+      const p = await seedProduct();
+      await as(user.member, async () => {
+        expect((await save(ws, { name: "nulls" }, [line(p)])).error?.code).toBe(
+          "23502",
+        );
+        expect(
+          (
+            await save(ws, quote, [
+              { quantity: 1, unit_value: "1", title: "t", product_id: p },
+            ])
+          ).error?.code,
+        ).toBe("23502");
+        for (const key of [
+          "origin",
+          "mode",
+          "entry_date",
+          "currency",
+          "status",
+        ])
+          expect(
+            (await save(ws, { ...quote, [key]: undefined }, [line(p)])).error
+              ?.code,
+            key,
+          ).toBe("23502");
+      });
+    }));
+
+  it("keeps a non-money total out of the audit row", () =>
+    scenario(async () => {
+      const p = await seedProduct();
+      let id: string | undefined;
+      await as(user.member, async () => {
+        id = (
+          await save(
+            ws,
+            { ...quote, totals: { totals: { landedCost: { pad: "x" } } } },
+            [line(p)],
+          )
+        ).id;
+      });
+      const audit = await db.query(
+        "select data ->> 'landed_cost' as landed from audit_log where entity_id = $1",
+        [id],
+      );
+      expect(audit.rows).toEqual([{ landed: null }]);
+    }));
+
+  describe("limits that hold however save_quote is called", () => {
+    const filler = (n: number, createdBy: string | null, age: string) =>
+      db.query(
+        `insert into quotes (workspace_id, name, origin, mode, entry_date, currency,
+           fx_rate_to_usd, status, totals, created_by, created_at)
+         select $1, 'Filler ' || g, 'CN', 'express', '2026-11-01', 'USD', 1, 'ok', '{}', $3,
+                now() - $4::interval
+         from generate_series(1, $2) g`,
+        [ws, n, createdBy, age],
+      );
+
+    it("at most 60 saves per person per hour", () =>
+      scenario(async () => {
+        const p = await seedProduct();
+        // The trigger sets created_by to the signed-in user, so fill as that user's rows.
+        await db.query("alter table quotes disable trigger quotes_created_by");
+        await filler(59, user.member, "10 minutes");
+        await filler(30, user.member, "2 hours");
+        await filler(30, user.owner, "10 minutes");
+        await db.query("alter table quotes enable trigger quotes_created_by");
+        await as(user.member, async () => {
+          expect((await save(ws, quote, [line(p)])).error).toBeUndefined();
+          expect((await save(ws, quote, [line(p)])).error?.message).toBe(
+            "too_many_quotes",
+          );
+        });
+        // Someone else in the workspace is not held back by it.
+        await as(user.owner, async () => {
+          expect((await save(ws, quote, [line(p)])).error).toBeUndefined();
+        });
+      }));
+
+    it("at most 2,000 quotes per workspace", () =>
+      scenario(async () => {
+        const p = await seedProduct();
+        await filler(1999, null, "2 days");
+        await as(user.member, async () => {
+          expect((await save(ws, quote, [line(p)])).error).toBeUndefined();
+          expect((await save(ws, quote, [line(p)])).error?.message).toBe(
+            "quote_limit",
+          );
+        });
+      }));
+  });
+
+  describe("delete_quote", () => {
+    const remove = async (id: string | undefined) => {
+      await db.query("savepoint d");
+      try {
+        await db.query("select delete_quote($1)", [id]);
+        await db.query("release savepoint d");
+        return null;
+      } catch (e) {
+        await db.query("rollback to savepoint d");
+        return (e as DbError).code;
+      }
+    };
+
+    it("lets an owner delete a quote and its lines, and logs it", () =>
+      scenario(async () => {
+        const p = await seedProduct();
+        let id: string | undefined;
+        await as(user.member, async () => {
+          id = (await save(ws, quote, [line(p)])).id;
+        });
+        for (const uid of [user.member, user.viewer, user.outsider, null])
+          await as(uid, async () => {
+            expect(await remove(id)).toBe("42501");
+          });
+        await as(user.owner, async () => {
+          expect(await remove(id)).toBeNull();
+          expect(await remove(id)).toBe("42501"); // already gone
+          expect(await remove(randomUUID())).toBe("42501");
+        });
+        const left = await db.query(
+          `select (select count(*)::int from quotes where id = $1) as quotes,
+                  (select count(*)::int from quote_lines where quote_id = $1) as lines`,
+          [id],
+        );
+        expect(left.rows[0]).toEqual({ quotes: 0, lines: 0 });
+        const audit = await db.query(
+          "select actor_id, action, data from audit_log where entity_id = $1 order by id",
+          [id],
+        );
+        expect(audit.rows.at(-1)).toEqual({
+          actor_id: user.owner,
+          action: "quote.delete",
+          data: { name: "November order" },
+        });
+      }));
+  });
 });
