@@ -211,3 +211,34 @@ export async function saveQuote(
   revalidatePath("/app/landed-cost");
   redirect(`/app/landed-cost/quotes/${id}?saved=1`);
 }
+
+const deleteSchema = z.object({ quoteId: z.uuid() });
+
+/** Owners and admins delete a saved quote (delete_quote checks the role and logs it). */
+export async function deleteQuote(
+  _prev: CalcState,
+  form: FormData,
+): Promise<CalcState> {
+  const parsed = deleteSchema.safeParse({ quoteId: form.get("quoteId") });
+  if (!parsed.success)
+    return { status: "error", message: "Reload the page and try again." };
+  const s = await session();
+  if (!s)
+    return {
+      status: "error",
+      message: "Your session has ended. Sign in again.",
+    };
+  const { error } = await s.supabase.rpc("delete_quote", {
+    p_quote: parsed.data.quoteId,
+  });
+  if (error)
+    return {
+      status: "error",
+      message:
+        error.code === "42501"
+          ? "Only an owner or admin can delete a quote."
+          : "Couldn't delete the quote because of a problem on our side. Try again.",
+    };
+  revalidatePath("/app/landed-cost");
+  redirect("/app/landed-cost?deleted=1");
+}

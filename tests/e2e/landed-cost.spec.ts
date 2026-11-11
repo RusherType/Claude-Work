@@ -138,7 +138,26 @@ test.describe("landed cost", () => {
     await page.getByRole("button", { name: /Calculate/ }).click();
     await expect(page.getByTestId("landed-cost-total")).toHaveText("$523.49");
 
+    // If the data changes between Calculate and Save, nothing unseen is saved: here the code
+    // stops being confirmed. Calculating again shows the new figures and clears the message.
     await page.getByLabel("Quote name").fill("November order");
+    await withLocalDb((db) =>
+      db.query(
+        `update public.classifications set status = 'outdated'
+         where is_current and product_id = (select id from public.products where sku = $1)`,
+        [sku],
+      ),
+    );
+    await page.getByRole("button", { name: "Save quote" }).click();
+    const refused = page.getByText(/Calculate again, then save/);
+    await expect(refused).toBeVisible();
+    await page.getByRole("button", { name: "Calculate again" }).click();
+    await expect(
+      page.getByRole("article", { name: "Crew T-shirt" }),
+    ).toContainText("Suggested code");
+    await expect(refused).toBeHidden();
+    await expect(page.getByLabel("Quote name")).toHaveValue("November order");
+
     await page.getByRole("button", { name: "Save quote" }).click();
     await expect(
       page.getByRole("heading", { name: "November order" }),
@@ -163,5 +182,12 @@ test.describe("landed cost", () => {
         .getByRole("complementary", { name: "Saved quotes" })
         .getByRole("link", { name: "November order" }),
     ).toBeVisible();
+
+    // An owner can delete the quote.
+    await page.getByRole("link", { name: "November order" }).click();
+    page.once("dialog", (d) => d.accept());
+    await page.getByRole("button", { name: "Delete quote" }).click();
+    await expect(page.getByText("Quote deleted.")).toBeVisible();
+    await expect(page.getByText("No quotes yet.")).toBeVisible();
   });
 });

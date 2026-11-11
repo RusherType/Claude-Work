@@ -173,11 +173,8 @@ test.describe("review queue", () => {
 
     // The shortcuts can be turned off (and stay off). Focus leaves the checkbox first, since
     // keys typed into a form control are ignored anyway.
-    // With the keyboard, as its users would (on a phone the dev-mode indicator covers it).
     const toggle = page.getByLabel("Keyboard shortcuts");
-    await toggle.focus();
-    await page.keyboard.press("Space");
-    await expect(toggle).not.toBeChecked();
+    await toggle.uncheck();
     await page.evaluate(() => (document.activeElement as HTMLElement).blur());
     await page.keyboard.press("e");
     // The same key navigated above; give a navigation, if any, time to start.
@@ -186,9 +183,7 @@ test.describe("review queue", () => {
     await expect(page.getByText("1 of 1")).toBeVisible();
     await page.reload();
     await expect(toggle).not.toBeChecked();
-    await toggle.focus();
-    await page.keyboard.press("Space");
-    await expect(toggle).toBeChecked();
+    await toggle.check();
 
     // The chips everywhere say Confirmed.
     await page.goto(`/app/catalog?q=${teeSku}`);

@@ -161,6 +161,11 @@ export function figuresDigest(
     result.totals.duties,
     result.totals.fees,
     result.totals.landedCost,
-    lines.map((l) => [l.code, l.confirmed, l.result.status, l.result.landedCost]),
+    lines.map((l) => [
+      l.code,
+      l.confirmed,
+      l.result.status,
+      l.result.landedCost,
+    ]),
   ]);
 }

@@ -3,6 +3,7 @@ import { landedCost } from "@/lib/tariff/landed-cost";
 import type { Component } from "@/lib/tariff/landed-cost/types";
 import { parseRate } from "@/lib/tariff/rate";
 import {
+  figuresDigest,
   lineResultSchema,
   referencedRows,
   relinkSources,
@@ -205,5 +206,48 @@ describe("source links come from the reference rows", () => {
         new Map([[`tariff_measures:${M}`, "javascript:alert(1)"]]),
       )[1].source,
     ).toMatchObject({ sourceUrl: null });
+  });
+});
+
+describe("figuresDigest", () => {
+  const result = price("420.00");
+  const lines = [
+    { code: "6109100012", confirmed: true, result: result.lines[0] },
+  ];
+  const base = figuresDigest(result, lines);
+  const flip = (status: "ok" | "needs_review") =>
+    status === "ok" ? ("needs_review" as const) : ("ok" as const);
+
+  it("is the same for the same figures", () => {
+    expect(figuresDigest(price("420.00"), lines)).toBe(base);
+  });
+
+  it("changes with anything the person would see change", () => {
+    const line = lines[0];
+    const changed = [
+      figuresDigest(price("421.00"), [
+        { ...line, result: price("421.00").lines[0] },
+      ]),
+      figuresDigest(result, [{ ...line, code: "6109100040" }]),
+      figuresDigest(result, [{ ...line, confirmed: false }]),
+      figuresDigest({ ...result, status: flip(result.status) }, lines),
+      figuresDigest(
+        {
+          ...result,
+          entryType: result.entryType === "formal" ? "informal" : "formal",
+        },
+        lines,
+      ),
+      figuresDigest(result, [
+        {
+          ...line,
+          result: { ...line.result, status: flip(line.result.status) },
+        },
+      ]),
+      figuresDigest(result, [...lines, line]),
+      figuresDigest(result, []),
+    ];
+    for (const d of changed) expect(d).not.toBe(base);
+    expect(new Set(changed).size).toBe(changed.length);
   });
 });

@@ -14,7 +14,10 @@ export const metadata: Metadata = { title: "Landed cost · ClearDuty" };
 
 const MODES = new Set(["postal", "express", "ocean", "air"]);
 
-export default async function LandedCostPage() {
+export default async function LandedCostPage(
+  props: PageProps<"/app/landed-cost">,
+) {
+  const { deleted } = await props.searchParams;
   const ctx = await getWorkspaceContext();
   if (!ctx) redirect("/sign-in?next=/app/landed-cost");
   if (!ctx.workspace) redirect("/app");
@@ -54,6 +57,11 @@ export default async function LandedCostPage() {
           tariff that applies, and customs fees, each with its source.
         </p>
       </div>
+      {deleted === "1" && (
+        <p role="status" className="text-confirmed text-sm">
+          Quote deleted.
+        </p>
+      )}
       <div className="grid gap-6 lg:grid-cols-[1fr_18rem]">
         <Calculator
           defaults={defaults}

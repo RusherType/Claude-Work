@@ -579,3 +579,36 @@ failed in Playwright on the review-queue flow (mobile), not on the calculator. A
   - rate limits on these actions and the PDF route (CD-104);
   - `pdf-lib` is unmaintained (last release 2021): track a maintained fork;
   - deleting a quote needs a `delete_quote` function if wanted.
+
+## 2026-11-11 (CD-051 review, round 2)
+
+CI was green on 956c0c9. The security re-audit passed (no critical or high findings); the
+reviewer confirmed all 13 round-1 findings fixed and asked for one more round. Fixed:
+- **Entry date:** the form now refuses dates outside 2000–2100 with a message on the field
+  (the database refused them at save with a misleading "problem on our side").
+- **Save error outlived the recalculation:** the save form is its own component, replaced with
+  each calculation; the quote name is kept.
+- **PDF never cut off:** a quote of more than 1,500 rows gets no PDF (422, and no download
+  button) instead of one that lost its totals and disclaimer past the old row cap.
+- **Save guard tested and widened:** save compares a digest of what was shown (status, entry
+  type, totals, each line's code, confirmed flag, status and landed cost), not only the grand
+  total. `actions.test.ts` runs the action with pricing and the database mocked; removing the
+  comparison fails two tests.
+- **Search errors:** a failed search or an ended session shows an alert, not "No products match".
+- **Limits and clean-up (audit):**
+  - `save_quote` caps a workspace at 2,000 quotes and a person at 60 saves an hour;
+  - owners and admins can delete a quote (`delete_quote`, audited, with a button on the quote
+    page);
+  - quote columns are `not null` (missing keys used to be stored as NULL);
+  - JSON caps lowered to 32 KB; the audit row keeps the total only when it is a money string;
+  - a saved quote pointing at more than 200 reference rows is treated as unreadable.
+- **Review-queue e2e:** restored the plain click on the shortcuts checkbox. The Next.js dev
+  indicator, which covered it on phone-sized screens, is turned off for the CI test server
+  only (`next.config.ts`); it never exists in production. The Q-key retry stays.
+- **Smaller:**
+  - choosing the currency already selected no longer clears a typed rate;
+  - "No products match." is no longer hidden from screen readers;
+  - a stale comment in `stored.ts` is corrected.
+- **Test counts:** `pnpm test` runs both projects (the database project's static tests run
+  without a database), which is why it reports more than the unit project alone.
+- **Still open, for CD-104:** per-user rate limits on calculate, save and the PDF route.

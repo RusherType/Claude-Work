@@ -41,6 +41,10 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // The dev-mode indicator floats over the bottom-left corner and, on a phone-sized screen,
+  // over real controls. It is off for the CI test server only, so the end-to-end tests click
+  // what a person would; it never exists in production.
+  ...(process.env.CI ? { devIndicators: false as const } : {}),
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

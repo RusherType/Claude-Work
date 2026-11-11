@@ -82,19 +82,40 @@ describe("quoteInputSchema", () => {
 });
 
 describe("saveQuoteSchema", () => {
-  const save = { name: "November order", shownTotal: "523.49", input: base };
+  const save = { name: "November order", shown: '["ok"]', input: base };
 
-  it("needs a name and the total that was shown", () => {
+  it("needs a name and what was shown", () => {
     expect(saveQuoteSchema.safeParse(save).success).toBe(true);
     for (const patch of [
       { name: " " },
-      { shownTotal: "" },
-      { shownTotal: "523.5" },
-      { shownTotal: "$523.49" },
-      { shownTotal: undefined },
+      { shown: "" },
+      { shown: "x".repeat(20_001) },
+      { shown: undefined },
     ])
       expect(saveQuoteSchema.safeParse({ ...save, ...patch }).success).toBe(
         false,
       );
   });
+});
+
+describe("entry date", () => {
+  it.each(["2000-01-01", "2026-11-01", "2100-12-31"])("accepts %s", (d) => {
+    expect(quoteInputSchema.safeParse({ ...base, entryDate: d }).success).toBe(
+      true,
+    );
+  });
+
+  // The quotes table refuses these too; the form says so instead of failing on save.
+  it.each(["1999-12-31", "2101-01-01", "0001-01-01", "9999-12-31"])(
+    "refuses %s with a message on the field",
+    (d) => {
+      const r = quoteInputSchema.safeParse({ ...base, entryDate: d });
+      expect(r.success).toBe(false);
+      if (!r.success)
+        expect(r.error.issues[0]).toMatchObject({
+          path: ["entryDate"],
+          message: "Use a date between 2000 and 2100.",
+        });
+    },
+  );
 });

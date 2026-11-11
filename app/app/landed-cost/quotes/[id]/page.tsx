@@ -2,11 +2,13 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
+import { MAX_PDF_ROWS, pdfRows } from "@/lib/landed-cost/pdf";
 import { loadSavedQuote } from "@/lib/landed-cost/saved";
 import { createClient } from "@/lib/supabase/server";
 import { primary } from "@/lib/ui/styles";
 import { getWorkspaceContext } from "@/lib/workspace";
 import { CostBreakdown } from "../../cost-breakdown";
+import { DeleteQuote } from "./delete-quote";
 
 export const metadata: Metadata = { title: "Quote · ClearDuty" };
 
@@ -27,6 +29,8 @@ export default async function QuotePage(
 
   const quote = await loadSavedQuote(supabase, ctx.workspace.id, id);
   if (!quote) notFound();
+  const canDelete =
+    ctx.workspace.role === "owner" || ctx.workspace.role === "admin";
 
   return (
     <div className="flex flex-col gap-4">
@@ -51,13 +55,24 @@ export default async function QuotePage(
                 {quote.carrier && ` · ${quote.carrier}`}
               </p>
             </div>
-            <a
-              href={`/app/landed-cost/quotes/${quote.id}/pdf`}
-              className={primary}
-              download
-            >
-              Download PDF
-            </a>
+            <div className="flex flex-wrap items-start gap-2">
+              {pdfRows(quote) <= MAX_PDF_ROWS ? (
+                <a
+                  href={`/app/landed-cost/quotes/${quote.id}/pdf`}
+                  className={primary}
+                  download
+                >
+                  Download PDF
+                </a>
+              ) : (
+                <p className="text-muted text-xs">
+                  Too long to print as a PDF.
+                </p>
+              )}
+              {canDelete && (
+                <DeleteQuote quoteId={quote.id} name={quote.name} />
+              )}
+            </div>
           </div>
           {saved === "1" && (
             <p role="status" className="text-confirmed text-sm">

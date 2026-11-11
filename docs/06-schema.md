@@ -200,13 +200,19 @@ Tenant data is scoped by `workspace_id` and protected by RLS; shared reference d
   - `quote_lines` keep the title, SKU and code used, the quantity and unit value, whether the code
     was only suggested, and the engine's line result (`breakdown`). There is one line per
     `position` (1–100), so a quote holds at most 100 lines.
-  - Checks match the calculator's Zod schema and refuse NaN, dates outside 2000–2100 and JSON
-    over 64 KB. Deleting a product sets `product_id` to null and keeps the line.
+  - Checks match the calculator's Zod schema (including entry dates from 2000 to 2100) and
+    refuse NaN and JSON over 32 KB. Every column a quote needs is `not null`. Deleting a product
+    sets `product_id` to null and keeps the line.
   - **Writes only through `save_quote(workspace, quote, lines)`** (security definer; owners,
     admins and members of a live workspace; one transaction; audited as `quote.save`). Clients
     cannot insert, edit or delete quote rows, so a saved quote is never changed afterwards.
     The figures are the caller's own: the app prices on the server before saving, but a member
     calling the function directly can save any figures under their own name.
+  - **Limits inside `save_quote`** (they hold however it is called): 2,000 quotes per workspace
+    (`quote_limit`) and 60 saves per person per hour (`too_many_quotes`).
+  - `delete_quote(quote)`: owners and admins of a live workspace; the lines go with it; audited
+    as `quote.delete`.
+  - The PDF is refused (422) for a quote of more than 1,500 printed rows, rather than cut off.
   - A saved quote is shown and printed as stored, never recomputed. On the way back it is
     checked with Zod, and "Source" links are taken from the published measure and fee rows by
     id, never from the stored JSON.
